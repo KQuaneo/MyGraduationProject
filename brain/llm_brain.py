@@ -3,7 +3,7 @@ from openai import OpenAI
 
 # === 配置区域 ===
 # 填入你刚才提供的 Key
-API_KEY = "sk-6803a2dd4c1249b98eb42599bd61b0d4" 
+API_KEY = "BLAHBLAHBLAH" 
 # DeepSeek 的官方 API 地址
 BASE_URL = "https://api.deepseek.com"
 
