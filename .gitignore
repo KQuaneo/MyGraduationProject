@@ -242,3 +242,24 @@ __marimo__/
 # 训练过程产生的日志文件夹
 wandb/
 runs/
+# --- LLM 模型相关 ---
+*.gguf
+*.pth
+*.pt
+*.bin
+*.safetensors
+
+# --- 训练相关 ---
+brain/local_agent/outputs/
+brain/local_agent/unsloth_compiled_cache/
+wandb/
+
+# --- 虚拟环境 ---
+.venv/
+venv/
+ENV/
+
+# --- 工具构建产物 (如果 llama.cpp 是你编译的) ---
+brain/local_agent/llama.cpp/build/
+*.o
+*.so
