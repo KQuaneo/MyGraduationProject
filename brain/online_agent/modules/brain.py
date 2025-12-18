@@ -1,14 +1,28 @@
+import sys
+import os
 import json
 from openai import OpenAI
 
-# === 配置区域 ===
-# 填入你刚才提供的 Key
-API_KEY = "BLAHBLAHBLAH" 
-# DeepSeek 的官方 API 地址
-BASE_URL = "https://api.deepseek.com"
+# === 关键步骤：把根目录加入到 Python 的搜索路径中 ===
+# 1. 获取当前文件 (brain.py) 的绝对路径
+current_dir = os.path.dirname(os.path.abspath(__file__))
+# 2. 获取上一级目录 (即 online_agent 根目录)
+root_dir = os.path.dirname(current_dir)
+# 3. 把根目录加入系统路径
+sys.path.append(root_dir)
+
+# === 现在可以安全地导入 config 了 ===
+try:
+    import config
+except ImportError:
+    print("错误：找不到 config.py，请确保它在项目根目录下。")
+    sys.exit(1)
 
 # 初始化客户端
-client = OpenAI(api_key=API_KEY, base_url=BASE_URL)
+client = OpenAI(
+    api_key=config.API_KEY, 
+    base_url=config.BASE_URL
+)
 
 # === 系统提示词 (System Prompt) ===
 # 这里的定义决定了小车够不够“聪明”，能不能稳定输出 JSON

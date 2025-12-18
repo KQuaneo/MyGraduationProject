@@ -1,15 +1,21 @@
+import sys
+import os
 import asyncio
 import edge_tts
 import pygame
-import os
 
-# 初始化 pygame 的混音器，用来播放音频
-pygame.mixer.init()
+# === 同样加入路径引用代码 ===
+current_dir = os.path.dirname(os.path.abspath(__file__))
+root_dir = os.path.dirname(current_dir)
+sys.path.append(root_dir)
 
-# 声音角色选择 (zh-CN-XiaoyiNeural 是很自然的中文女声)
-# 你也可以换成 zh-CN-YunxiNeural (男声)
-VOICE = "zh-CN-XiaoyiNeural"
-OUTPUT_FILE = "reply.mp3"
+import config  # 导入配置
+
+# 使用 config 中的配置
+VOICE = config.TTS_VOICE
+OUTPUT_FILE = config.TTS_FILE
+
+# ... (后面的代码保持不变) ...
 
 async def _generate_audio(text):
     """(内部函数) 调用 Edge-TTS 生成 MP3"""

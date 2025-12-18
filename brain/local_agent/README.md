@@ -16,8 +16,8 @@
 创建并进入工作目录：
 
 ```bash
-mkdir -p ~/brain/local_brain
-cd ~/brain/local_brain
+mkdir -p ~/brain/local_agent
+cd ~/brain/local_agent
 ```
 
 ### 2.搭建环境
@@ -46,3 +46,21 @@ HF_HUB_ENABLE_HF_TRANSFER=0 HF_ENDPOINT=https://hf-mirror.com python train_robot
 ```
 ### 5.得到模型
 qwen2.5-1.5b-instruct.Q4_K_M.gguf
+
+### 6.通过scp将模型传到树莓派端
+```bash
+scp qwen2.5-1.5b-instruct.Q4_K_M.gguf pi@100.xx.xx.xx:~/
+```
+
+### 7.树莓派端需要重新设置环境(这一步是让树莓派拥有运行 GGUF 模型的能力)
+```bash
+uv pip install llama-cpp-python               
+```
+
+### 8.树莓派运行程序
+```bash
+python test_brain.py
+```
+
+## 效果
+![alt text](image.png)

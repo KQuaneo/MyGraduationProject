@@ -1,7 +1,10 @@
 [project]
-name = "brain"
+name = "online-agent"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = []
+dependencies = [
+    "pyaudio>=0.2.14",
+    "vosk>=0.3.45",
+]
