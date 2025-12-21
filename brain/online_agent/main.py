@@ -22,7 +22,7 @@ except ImportError as e:
 
 # === 3. 引入情绪显示模块 ===
 try:
-    from emotion_display import EmotionDisplay
+    from modules.emotion_display import EmotionDisplay
     EMOTION_DISPLAY_ENABLED = True
 except ImportError as e:
     print(f"⚠️ 情绪显示模块加载失败: {e}")
