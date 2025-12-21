@@ -2,7 +2,7 @@ import sys
 import os
 import asyncio
 import edge_tts
-import pygame
+import subprocess
 
 # === 同样加入路径引用代码 ===
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -15,47 +15,55 @@ import config  # 导入配置
 VOICE = config.TTS_VOICE
 OUTPUT_FILE = config.TTS_FILE
 
-# ... (后面的代码保持不变) ...
+# USB 音箱设备
+AUDIO_DEVICE = "plughw:3,0"
+
+# 重试配置
+MAX_RETRIES = 3
+RETRY_DELAY = 1
 
 async def _generate_audio(text):
-    """(内部函数) 调用 Edge-TTS 生成 MP3"""
-    communicate = edge_tts.Communicate(text, VOICE)
-    await communicate.save(OUTPUT_FILE)
+    """(内部函数) 调用 Edge-TTS 生成 MP3，带重试机制"""
+    for attempt in range(MAX_RETRIES):
+        try:
+            communicate = edge_tts.Communicate(text, VOICE)
+            await communicate.save(OUTPUT_FILE)
+            return
+        except Exception as e:
+            if attempt < MAX_RETRIES - 1:
+                print(f"TTS 连接失败，正在重试 ({attempt + 1}/{MAX_RETRIES})...")
+                await asyncio.sleep(RETRY_DELAY)
+            else:
+                raise e
 
 def speak(text):
     """
     主函数：输入文本，播放声音
-    这是一个阻塞函数，说完话才会继续往下执行，
-    防止小车听到自己说的话（自激啸叫）。
+    使用 mpg123 通过 USB 音箱播放
     """
     if not text:
         return
 
     print(f"🔊 正在说话: {text}")
     
-    # 1. 生成音频文件 (异步转同步)
+    # 1. 生成音频文件
     try:
         asyncio.run(_generate_audio(text))
     except Exception as e:
         print(f"TTS 生成失败: {e}")
         return
 
-    # 2. 播放音频
+    # 2. 播放音频 (通过 USB 音箱)
     if os.path.exists(OUTPUT_FILE):
         try:
-            pygame.mixer.music.load(OUTPUT_FILE)
-            pygame.mixer.music.play()
-            
-            # 等待播放结束 (阻塞)
-            while pygame.mixer.music.get_busy():
-                pygame.time.Clock().tick(10)
-                
-            # 播放完后卸载文件，否则下次无法覆盖写入
-            pygame.mixer.music.unload() 
-            
+            subprocess.run(
+                ['mpg123', '-q', '-a', AUDIO_DEVICE, OUTPUT_FILE],
+                check=True
+            )
+        except FileNotFoundError:
+            print("请安装 mpg123: sudo apt install mpg123")
         except Exception as e:
             print(f"播放失败: {e}")
 
 if __name__ == "__main__":
-    # 测试一下
     speak("你好呀，我是你的智能小助手，我们可以出发了吗？")

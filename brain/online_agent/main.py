@@ -5,7 +5,6 @@ import pyaudio
 from vosk import Model, KaldiRecognizer
 
 # === 1. 引入配置文件 ===
-# (确保 config.py 在同一目录下)
 try:
     import config
 except ImportError:
@@ -21,9 +20,17 @@ except ImportError as e:
     print("请确认 modules 文件夹下有 brain.py, mouth.py 和 __init__.py")
     sys.exit(1)
 
+# === 3. 引入情绪显示模块 ===
+try:
+    from emotion_display import EmotionDisplay
+    EMOTION_DISPLAY_ENABLED = True
+except ImportError as e:
+    print(f"⚠️ 情绪显示模块加载失败: {e}")
+    EMOTION_DISPLAY_ENABLED = False
+
+
 def run_voice_control():
     # === 路径设置 ===
-    # 获取当前脚本(main.py)所在的绝对路径
     current_dir = os.path.dirname(os.path.abspath(__file__))
     model_path = os.path.join(current_dir, "model")
 
@@ -45,7 +52,6 @@ def run_voice_control():
         print(f"模型加载失败: {e}")
         sys.exit(1)
 
-    # 告诉 Vosk 我们现在的采样率
     rec = KaldiRecognizer(model, SAMPLE_RATE)
 
     p = pyaudio.PyAudio()
@@ -57,7 +63,7 @@ def run_voice_control():
         'rate': SAMPLE_RATE,
         'input': True,
         'frames_per_buffer': 8000,
-        'input_device_index': MIC_ID  # <--- 使用配置文件的 ID
+        'input_device_index': MIC_ID
     }
     
     try:
@@ -71,12 +77,31 @@ def run_voice_control():
 
     stream.start_stream()
     
+    # === 初始化情绪显示 ===
+    emotion_display = None
+    if EMOTION_DISPLAY_ENABLED:
+        try:
+            emotion_display = EmotionDisplay()
+            # 使用配置文件控制是否全屏
+            fullscreen = getattr(config, 'EMOTION_FULLSCREEN', True)
+            emotion_display.start(fullscreen=fullscreen)
+            print("✅ 情绪显示屏已启动")
+        except Exception as e:
+            print(f"⚠️ 情绪显示初始化失败: {e}")
+            emotion_display = None
+    
     print("\n=== ✨ 具身智能小车已就绪 (树莓派版) ✨ ===")
     print(f"当前角色: {config.TTS_VOICE}")
     print("请对着麦克风说话...")
 
     try:
         while True:
+            # 处理 pygame 事件（保持窗口响应）
+            if emotion_display:
+                if not emotion_display.process_events():
+                    print("用户关闭了显示窗口")
+                    break
+            
             # 读取数据
             data = stream.read(8000, exception_on_overflow=False)
             
@@ -98,13 +123,18 @@ def run_voice_control():
                         action = command.get('action')
                         speed = command.get('speed')
                         reply = command.get('reply')
+                        emotion = command.get('emotion', 'neutral')  # 获取情绪
                         
-                        print(f"🤖 决策: {action} | 速度: {speed}")
+                        print(f"🤖 决策: {action} | 速度: {speed} | 情绪: {emotion}")
                         
-                        # 3. === 嘴巴说话 ===
+                        # 3. === 更新情绪显示 ===
+                        if emotion_display:
+                            emotion_display.update_emotion(emotion)
+                        
+                        # 4. === 嘴巴说话 ===
                         speak(reply)
                         
-                        # 4. === 执行动作 (未来加 GPIO) ===
+                        # 5. === 执行动作 (未来加 GPIO) ===
                         if action == "dance":
                             print(">>> 💃 小车正在跳舞...")
                         elif action == "stop":
@@ -112,7 +142,7 @@ def run_voice_control():
                         elif action == "move_forward":
                             print(">>> ⬆️ 前进")
                         
-                    # 5. === 恢复录音 ===
+                    # 6. === 恢复录音 ===
                     if stream.is_stopped():
                          stream.start_stream()
                     
@@ -121,19 +151,25 @@ def run_voice_control():
     except KeyboardInterrupt:
         print("\n再见！")
     finally:
+        # 关闭情绪显示
+        if emotion_display:
+            emotion_display.close()
+        
         if 'stream' in locals():
             stream.stop_stream()
             stream.close()
         p.terminate()
-        # 清理临时音频文件 (文件名也从 config 读，保持统一)
+        
+        # 清理临时音频文件
         if hasattr(config, 'TTS_FILE') and os.path.exists(config.TTS_FILE):
             try:
                 os.remove(config.TTS_FILE)
             except:
                 pass
-        elif os.path.exists("reply.mp3"): # 兼容旧配置
+        elif os.path.exists("reply.mp3"):
              try: os.remove("reply.mp3") 
              except: pass
+
 
 if __name__ == "__main__":
     run_voice_control()

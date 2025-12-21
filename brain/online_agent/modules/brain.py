@@ -36,13 +36,24 @@ SYSTEM_PROMPT = """
    - "action": 字符串，可选值: "move_forward", "move_backward", "turn_left", "turn_right", "stop", "dance" (跳舞/高兴)
    - "speed": 整数，范围 0-100
    - "reply": 字符串，你用简短、可爱的语气回复用户的语音内容 (20字以内)
+   - "emotion": 字符串，可选值："happy", "angry", "fear", "neutral", "sad", "surprise"
+
+
 
 【示例】
 用户："有点黑，往前走一点看看"
-返回：{"action": "move_forward", "speed": 40, "reply": "好的，小心翼翼往前走"}
+返回：{"action": "move_forward", "speed": 40, "reply": "好的，小心翼翼往前走"，"emotion":"fear"}
 
 用户："停下来！"
-返回：{"action": "stop", "speed": 0, "reply": "急刹车！"}
+返回：{"action": "stop", "speed": 0, "reply": "急刹车！", "emotion":"surprise"}
+
+
+根据用户说的话判断合适的情绪：
+- 用户表扬、开心的内容 -> happy
+- 用户批评、难过的内容 -> sad  
+- 用户生气的内容 -> angry
+- 用户说了意外的事 -> surprised
+- 普通对话 -> neutral
 """
 
 def chat_with_brain(user_text):
