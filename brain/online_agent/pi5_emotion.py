@@ -3,37 +3,155 @@ import io
 import cv2
 import numpy as np
 import threading
-from http.server import BaseHTTPRequestHandler, HTTPServer
+import sys
+import subprocess
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from picamera2 import Picamera2
 from deepface import DeepFace
+from collections import deque, Counter
 
 # ================= 配置区域 =================
 HOST_NAME = '0.0.0.0'
 PORT_NUMBER = 8000
-# 检测频率：每隔多少帧检测一次表情 (Pi5 上建议 15-30)
-DETECT_INTERVAL = 20 
+
+# 【升级1】不再缩小图片，使用原图识别，大幅提升准确率
+AI_SCALE = 1.0 
+
+# 【升级2】检测频率。SSD 模型稍慢，我们降低检测频率来保证不过热
+# 0.1 表示每 10 秒只让它全速跑 0.1 秒？不是，这里用于 sleep
+# 我们在代码里控制频率
 # ===========================================
 
-# 全局变量，用于在不同线程间共享最新的表情结果
-current_emotion = "Analyzing..."
-current_score = 0.0
-face_box = None
+# 全局变量
+data_lock = threading.Lock()
+latest_frame_for_ai = None
+ai_result_emotion = "Initializing..." 
+ai_result_score = 0.0
+ai_result_box = None
 
-print("正在初始化摄像头...")
-picam2 = Picamera2()
-# 配置为 640x480 分辨率，格式 RGB888
-config = picam2.create_preview_configuration(main={"size": (640, 480), "format": "RGB888"})
-picam2.configure(config)
-picam2.start()
-print("摄像头已启动！")
+# AI 历史队列 (加长队列，让结果更稳定)
+emotion_history = deque(maxlen=7)
 
-# --- 表情识别线程函数 ---
-# 我们在主循环里做简单的跳帧处理，复杂的识别逻辑由 DeepFace 内部处理
-# 为了不阻塞视频流，我们在每一帧只做绘制，识别只在特定帧触发
+# -----------------------------------------------------------
+# 🧠 线程 1：AI 专门处理线程 (鹰眼模式)
+# -----------------------------------------------------------
+def ai_worker():
+    global latest_frame_for_ai, ai_result_emotion, ai_result_score, ai_result_box, emotion_history
+    
+    print("🧠 [后台] AI 线程启动 | 模式: High Accuracy (SSD)")
+    
+    # 预热模型 (这次会加载 SSD 模型，可能需要几秒钟)
+    try:
+        dummy = np.zeros((100, 100, 3), dtype=np.uint8)
+        DeepFace.analyze(
+            img_path=dummy, 
+            actions=['emotion'], 
+            detector_backend='ssd', # 【关键升级】使用 SSD 检测器
+            enforce_detection=False, 
+            silent=True
+        )
+        print("🧠 [后台] SSD 模型加载完毕，准备就绪！")
+        with data_lock: ai_result_emotion = "Ready"
+    except Exception as e:
+        print(f"预热警告: {e}")
 
+    while True:
+        frame_to_analyze = None
+        with data_lock:
+            if latest_frame_for_ai is not None:
+                frame_to_analyze = latest_frame_for_ai.copy()
+        
+        if frame_to_analyze is None:
+            time.sleep(0.1)
+            continue
+
+        try:
+            # 根据配置缩放 (现在是 1.0 原图)
+            if AI_SCALE != 1.0:
+                input_frame = cv2.resize(frame_to_analyze, (0, 0), fx=AI_SCALE, fy=AI_SCALE)
+            else:
+                input_frame = frame_to_analyze
+
+            # --- 核心识别 ---
+            results = DeepFace.analyze(
+                img_path = input_frame, 
+                actions = ['emotion'], 
+                # 【关键升级】这里改成了 'ssd'，它是准确率的关键！
+                # 如果觉得 Pi 5 实在太烫，可以改回 'opencv'，但为了准确率建议保留 ssd
+                detector_backend = 'ssd', 
+                enforce_detection = False,
+                silent = True
+            )
+            
+            with data_lock:
+                if results and len(results) > 0:
+                    res = results[0]
+                    
+                    # 只有检测框有意义时才处理
+                    if res['region']['w'] > 0:
+                        raw_emotion = res['dominant_emotion']
+                        
+                        emotion_history.append(raw_emotion)
+                        if len(emotion_history) > 0:
+                            # 投票
+                            most_common = Counter(emotion_history).most_common(1)[0]
+                            ai_result_emotion = most_common[0]
+                            ai_result_score = res['emotion'][ai_result_emotion]
+                            
+                            # 坐标还原
+                            region = res['region']
+                            scale = 1 / AI_SCALE
+                            ai_result_box = (
+                                int(region['x'] * scale),
+                                int(region['y'] * scale),
+                                int(region['w'] * scale),
+                                int(region['h'] * scale)
+                            )
+                    else:
+                        ai_result_box = None
+                else:
+                    ai_result_box = None
+                    # 只有连续多次没检测到，才显示 No Face (防闪烁)
+                    if len(emotion_history) > 0: emotion_history.popleft()
+                    else: ai_result_emotion = "Scanning..."
+                        
+        except Exception as e:
+            # print(f"AI Log: {e}") # 调试时可打开
+            pass
+            
+        # 识别间隔：SSD 比较耗资源，每次识别完休息 0.05秒
+        # 这样既保证了识别率，又不会卡死 CPU
+        time.sleep(0.05)
+
+# -----------------------------------------------------------
+# 📷 主程序初始化
+# -----------------------------------------------------------
+print("📷 正在初始化摄像头 (开启自动对焦)...")
+try:
+    picam2 = Picamera2()
+    
+    # 【升级3】开启连续自动对焦 (AfMode: 2)
+    # 这对于 Module 3 至关重要，否则脸是糊的，神仙也识别不出来
+    config = picam2.create_preview_configuration(
+        main={"size": (640, 480), "format": "RGB888"},
+        controls={"AfMode": 2} 
+    )
+    picam2.configure(config)
+    picam2.start()
+    print("✅ 摄像头已启动 | 自动对焦: ON")
+    
+    threading.Thread(target=ai_worker, daemon=True).start()
+    
+except Exception as e:
+    print(f"❌ 启动失败: {e}")
+    sys.exit(1)
+
+# -----------------------------------------------------------
+# 🌐 Web 服务器
+# -----------------------------------------------------------
 class StreamingHandler(BaseHTTPRequestHandler):
     def do_GET(self):
-        global current_emotion, current_score, face_box
+        global latest_frame_for_ai
         
         if self.path == '/':
             self.send_response(200)
@@ -41,10 +159,10 @@ class StreamingHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(b"""
                 <html>
-                <head><title>Pi 5 Emotion AI</title></head>
-                <body style="background: #111; color: #eee; text-align: center;">
-                    <h1>Facial Emotion Recognition</h1>
-                    <img src="/stream.mjpg" style="border: 4px solid #00ff00;" />
+                <head><title>Pi 5 High-Res AI</title></head>
+                <body style="background: #222; margin: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100vh; color: #fff; font-family: sans-serif;">
+                    <h2>Emotion AI (SSD Model + Autofocus)</h2>
+                    <img src="/stream.mjpg" style="max-width: 100%; border: 4px solid #444; border-radius: 8px;" />
                 </body>
                 </html>
             """)
@@ -53,87 +171,68 @@ class StreamingHandler(BaseHTTPRequestHandler):
             self.send_header('Content-Type', 'multipart/x-mixed-replace; boundary=FRAME')
             self.end_headers()
             
-            frame_count = 0
-            
             try:
                 while True:
-                    # 1. 获取图像矩阵 (RGB)
                     image = picam2.capture_array()
-                    
-                    # 2. 转为 OpenCV 格式 (BGR)
                     image_bgr = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
                     
-                    # 3. --- 核心识别逻辑 (跳帧处理) ---
-                    if frame_count % DETECT_INTERVAL == 0:
-                        try:
-                            # actions=['emotion'] 只识别表情
-                            # detector_backend='opencv' 使用最快的 opencv 人脸检测器 (也可以换 'ssd' 或 'mediapipe')
-                            # enforce_detection=False 允许未检测到人脸时不报错
-                            results = DeepFace.analyze(
-                                img_path = image_bgr, 
-                                actions = ['emotion'], 
-                                detector_backend = 'opencv', 
-                                enforce_detection = False,
-                                silent = True
-                            )
-                            
-                            if results and len(results) > 0:
-                                # 取第一张人脸的结果
-                                res = results[0]
-                                dominant_emotion = res['dominant_emotion'] # 例如 "happy"
-                                emotion_score = res['emotion'][dominant_emotion] # 例如 95.2
-                                
-                                # 更新全局变量
-                                current_emotion = dominant_emotion
-                                current_score = emotion_score
-                                
-                                # 更新人脸框位置
-                                region = res['region']
-                                face_box = (region['x'], region['y'], region['w'], region['h'])
-                            else:
-                                face_box = None
-                                current_emotion = "No Face"
-                                
-                        except Exception as e:
-                            print(f"识别出错: {e}")
+                    # 更新 AI 数据
+                    with data_lock:
+                        latest_frame_for_ai = image_bgr
+                        curr_emo = ai_result_emotion
+                        curr_score = ai_result_score
+                        curr_box = ai_result_box
 
-                    # 4. --- 绘制结果 (每一帧都画) ---
-                    # 画框
-                    if face_box:
-                        x, y, w, h = face_box
-                        cv2.rectangle(image_bgr, (x, y), (x+w, y+h), (0, 255, 0), 2)
+                    # --- 绘制 UI ---
+                    # 状态栏
+                    overlay = image_bgr.copy()
+                    cv2.rectangle(overlay, (0, 0), (640, 50), (0, 0, 0), -1)
+                    image_bgr = cv2.addWeighted(overlay, 0.6, image_bgr, 0.4, 0)
                     
-                    # 画文字 (背景黑条 + 文字)
-                    info_text = f"{current_emotion}: {current_score:.1f}%"
-                    cv2.rectangle(image_bgr, (10, 10), (300, 50), (0,0,0), -1) # 文字背景
+                    status_text = f"AI: {curr_emo.upper()}"
+                    if curr_box: status_text += f" ({curr_score:.0f}%)"
                     
-                    # 根据表情改变文字颜色
-                    text_color = (0, 255, 255) # 默认黄
-                    if current_emotion == 'happy': text_color = (0, 255, 0) # 开心绿
-                    elif current_emotion == 'angry': text_color = (0, 0, 255) # 生气红
+                    # 颜色逻辑
+                    color = (200, 200, 200)
+                    if curr_emo in ["happy", "surprise"]: color = (0, 255, 0) # 绿
+                    elif curr_emo in ["sad", "fear", "angry"]: color = (0, 0, 255) # 红
+                    elif curr_emo == "neutral": color = (0, 255, 255) # 黄
                     
-                    cv2.putText(image_bgr, info_text, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, text_color, 2)
+                    cv2.putText(image_bgr, status_text, (15, 35), cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2)
 
-                    # 5. 编码为 JPEG 并发送
-                    ret, jpeg = cv2.imencode('.jpg', image_bgr)
-                    frame_data = jpeg.tobytes()
+                    # 人脸框
+                    if curr_box:
+                        x, y, w, h = curr_box
+                        cv2.rectangle(image_bgr, (x, y), (x+w, y+h), color, 2)
+
+                    # 发送
+                    image_final = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
+                    ret, jpeg = cv2.imencode('.jpg', image_final)
+                    if ret:
+                        frame_data = jpeg.tobytes()
+                        self.wfile.write(b'--FRAME\r\n')
+                        self.send_header('Content-Type', 'image/jpeg')
+                        self.send_header('Content-Length', len(frame_data))
+                        self.end_headers()
+                        self.wfile.write(frame_data)
+                        self.wfile.write(b'\r\n')
                     
-                    self.wfile.write(b'--FRAME\r\n')
-                    self.send_header('Content-Type', 'image/jpeg')
-                    self.send_header('Content-Length', len(frame_data))
-                    self.end_headers()
-                    self.wfile.write(frame_data)
-                    self.wfile.write(b'\r\n')
-                    
-                    frame_count += 1
+                    time.sleep(0.02) # 30-50 FPS Video Stream
                     
             except Exception as e:
-                print(f"Stream closed: {e}")
+                pass
 
 if __name__ == '__main__':
-    print(f"AI 服务运行中: http://{HOST_NAME}:{PORT_NUMBER}")
-    print("首次运行 DeepFace 会下载模型 (约几百MB)，请保持网络通畅！")
-    server = HTTPServer((HOST_NAME, PORT_NUMBER), StreamingHandler)
+    print("-" * 50)
+    print(f"🚀 高精度服务启动中...")
+    try:
+        ip = subprocess.check_output(['hostname', '-I']).decode('utf-8').split()[0]
+        print(f"👉 访问地址: http://{ip}:{PORT_NUMBER}")
+    except:
+        print(f"👉 访问地址: http://localhost:{PORT_NUMBER}")
+    print("-" * 50)
+        
+    server = ThreadingHTTPServer((HOST_NAME, PORT_NUMBER), StreamingHandler)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
