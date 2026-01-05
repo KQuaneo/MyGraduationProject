@@ -33,27 +33,38 @@ ai_result_box = None
 emotion_history = deque(maxlen=7)
 
 # -----------------------------------------------------------
-# 🧠 线程 1：AI 专门处理线程 (鹰眼模式)
+# 🧠 线程 1：AI 专门处理线程 (EMA 平滑稳定版)
 # -----------------------------------------------------------
 def ai_worker():
-    global latest_frame_for_ai, ai_result_emotion, ai_result_score, ai_result_box, emotion_history
+    global latest_frame_for_ai, ai_result_emotion, ai_result_score, ai_result_box
     
-    print("🧠 [后台] AI 线程启动 | 模式: High Accuracy (SSD)")
+    # 1. 平滑系数 (0.1 ~ 0.3)
+    SMOOTH_FACTOR = 0.2
     
-    # 预热模型 (这次会加载 SSD 模型，可能需要几秒钟)
+    # 2. 【核心新增】情绪校准权重 (人为修正模型的偏见)
+    # 现在的逻辑是：模型太爱报 sad 了，我们惩罚 sad，奖励 happy 和 neutral
+    EMOTION_WEIGHTS = {
+        'angry': 1.0, 
+        'disgust': 0.0, 
+        'fear': 1.0, 
+        'happy': 3.0,    # 快乐加倍：让微笑更容易被识别
+        'sad': 0.5,      # 悲伤打3折：除非真的痛哭流涕，否则很难触发 sad
+        'surprise': 0.0, 
+        'neutral': 2.0   # 中性加成：让“面无表情”更优先判定为 neutral 而不是 sad
+    }
+    
+    # 初始化惯性分数
+    ema_scores = {k: 0.0 for k in EMOTION_WEIGHTS}
+
+    print(f"🧠 [后台] AI 启动 | 启用权重校准: Sad x{EMOTION_WEIGHTS['sad']}, Happy x{EMOTION_WEIGHTS['happy']}")
+    
     try:
         dummy = np.zeros((100, 100, 3), dtype=np.uint8)
-        DeepFace.analyze(
-            img_path=dummy, 
-            actions=['emotion'], 
-            detector_backend='ssd', # 【关键升级】使用 SSD 检测器
-            enforce_detection=False, 
-            silent=True
-        )
-        print("🧠 [后台] SSD 模型加载完毕，准备就绪！")
+        DeepFace.analyze(dummy, actions=['emotion'], detector_backend='ssd', enforce_detection=False, silent=True)
+        print("🧠 [后台] 模型就绪")
         with data_lock: ai_result_emotion = "Ready"
-    except Exception as e:
-        print(f"预热警告: {e}")
+    except:
+        pass
 
     while True:
         frame_to_analyze = None
@@ -66,18 +77,9 @@ def ai_worker():
             continue
 
         try:
-            # 根据配置缩放 (现在是 1.0 原图)
-            if AI_SCALE != 1.0:
-                input_frame = cv2.resize(frame_to_analyze, (0, 0), fx=AI_SCALE, fy=AI_SCALE)
-            else:
-                input_frame = frame_to_analyze
-
-            # --- 核心识别 ---
             results = DeepFace.analyze(
-                img_path = input_frame, 
+                img_path = frame_to_analyze, 
                 actions = ['emotion'], 
-                # 【关键升级】这里改成了 'ssd'，它是准确率的关键！
-                # 如果觉得 Pi 5 实在太烫，可以改回 'opencv'，但为了准确率建议保留 ssd
                 detector_backend = 'ssd', 
                 enforce_detection = False,
                 silent = True
@@ -86,63 +88,54 @@ def ai_worker():
             with data_lock:
                 if results and len(results) > 0:
                     res = results[0]
-                    
-# -------------------------------------------------------
-                    # 替换开始：带有“快乐滤镜”的逻辑
-                    # -------------------------------------------------------
                     if res['region']['w'] > 0:
-                        # 获取所有表情的原始分数 (字典: {'angry': 20.1, 'happy': 15.5, ...})
-                        emotions_dict = res['emotion']
+                        raw_scores = res['emotion'] # 原始分数
                         
-                        # 1. 人工修正：如果“开心”的分数超过 5%，就屏蔽掉“生气”
-                        # 因为在正常交互中，微弱的开心比微弱的生气更常见，且容易混淆
-                        if emotions_dict['happy'] > 5.0:
-                            emotions_dict['angry'] = 0.0
+                        # =========================================
+                        # 🔧 步骤 1: 权重校准 (解决 Sad 太多、微笑不识别的问题)
+                        # =========================================
+                        calibrated_scores = {}
+                        for emo, score in raw_scores.items():
+                            # 乘上我们需要的人为权重
+                            calibrated_scores[emo] = score * EMOTION_WEIGHTS.get(emo, 1.0)
                         
-                        # 2. 重新计算最大值对应的表情
-                        # max(字典, key=字典.get) 会返回分数最高的那个键
-                        adjusted_emotion = max(emotions_dict, key=emotions_dict.get)
-                        
-                        # 3. 只有当置信度比较高时才采纳，否则算 Neutral
-                        if emotions_dict[adjusted_emotion] < 40.0:
-                             adjusted_emotion = 'neutral'
+                        # 特殊逻辑：如果快乐分数有一点苗头(>10)，就直接屏蔽掉 Sad
+                        # 防止“苦笑”被识别成 Sad
+                        if raw_scores['happy'] > 10.0:
+                            calibrated_scores['sad'] = 0.0
 
-                        # 加入历史队列
-                        emotion_history.append(adjusted_emotion)
+                        # =========================================
+                        # 🔧 步骤 2: EMA 动量平滑 (解决数值乱跳)
+                        # =========================================
+                        for emo, score in calibrated_scores.items():
+                            ema_scores[emo] = (score * SMOOTH_FACTOR) + (ema_scores[emo] * (1.0 - SMOOTH_FACTOR))
                         
-                        if len(emotion_history) > 0:
-                            # 投票
-                            most_common = Counter(emotion_history).most_common(1)[0]
-                            ai_result_emotion = most_common[0]
-                            # 获取修正后的分数
-                            ai_result_score = emotions_dict[ai_result_emotion]
-                            
-                            # 坐标还原
-                            region = res['region']
-                            scale = 1 / AI_SCALE
-                            ai_result_box = (
-                                int(region['x'] * scale),
-                                int(region['y'] * scale),
-                                int(region['w'] * scale),
-                                int(region['h'] * scale)
-                            )
-                    # -------------------------------------------------------
-                    # 替换结束
-                    # -------------------------------------------------------
+                        # 3. 选出冠军
+                        winner_emotion = max(ema_scores, key=ema_scores.get)
+                        
+                        # 4. 计算显示的百分比 (因为我们加权了，所以要重新归一化一下，不然可能超过100%)
+                        total_score = sum(ema_scores.values())
+                        if total_score > 0:
+                            final_percentage = (ema_scores[winner_emotion] / total_score) * 100
+                        else:
+                            final_percentage = 0.0
+
+                        ai_result_emotion = winner_emotion
+                        ai_result_score = final_percentage
+                        
+                        # 坐标
+                        region = res['region']
+                        ai_result_box = (region['x'], region['y'], region['w'], region['h'])
                     else:
                         ai_result_box = None
+                        for k in ema_scores: ema_scores[k] *= 0.8
                 else:
                     ai_result_box = None
-                    # 只有连续多次没检测到，才显示 No Face (防闪烁)
-                    if len(emotion_history) > 0: emotion_history.popleft()
-                    else: ai_result_emotion = "Scanning..."
+                    for k in ema_scores: ema_scores[k] *= 0.8
                         
-        except Exception as e:
-            # print(f"AI Log: {e}") # 调试时可打开
+        except Exception:
             pass
             
-        # 识别间隔：SSD 比较耗资源，每次识别完休息 0.05秒
-        # 这样既保证了识别率，又不会卡死 CPU
         time.sleep(0.05)
 
 # -----------------------------------------------------------
