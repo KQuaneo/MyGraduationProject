@@ -87,16 +87,35 @@ def ai_worker():
                 if results and len(results) > 0:
                     res = results[0]
                     
-                    # 只有检测框有意义时才处理
+# -------------------------------------------------------
+                    # 替换开始：带有“快乐滤镜”的逻辑
+                    # -------------------------------------------------------
                     if res['region']['w'] > 0:
-                        raw_emotion = res['dominant_emotion']
+                        # 获取所有表情的原始分数 (字典: {'angry': 20.1, 'happy': 15.5, ...})
+                        emotions_dict = res['emotion']
                         
-                        emotion_history.append(raw_emotion)
+                        # 1. 人工修正：如果“开心”的分数超过 5%，就屏蔽掉“生气”
+                        # 因为在正常交互中，微弱的开心比微弱的生气更常见，且容易混淆
+                        if emotions_dict['happy'] > 5.0:
+                            emotions_dict['angry'] = 0.0
+                        
+                        # 2. 重新计算最大值对应的表情
+                        # max(字典, key=字典.get) 会返回分数最高的那个键
+                        adjusted_emotion = max(emotions_dict, key=emotions_dict.get)
+                        
+                        # 3. 只有当置信度比较高时才采纳，否则算 Neutral
+                        if emotions_dict[adjusted_emotion] < 40.0:
+                             adjusted_emotion = 'neutral'
+
+                        # 加入历史队列
+                        emotion_history.append(adjusted_emotion)
+                        
                         if len(emotion_history) > 0:
                             # 投票
                             most_common = Counter(emotion_history).most_common(1)[0]
                             ai_result_emotion = most_common[0]
-                            ai_result_score = res['emotion'][ai_result_emotion]
+                            # 获取修正后的分数
+                            ai_result_score = emotions_dict[ai_result_emotion]
                             
                             # 坐标还原
                             region = res['region']
@@ -107,6 +126,9 @@ def ai_worker():
                                 int(region['w'] * scale),
                                 int(region['h'] * scale)
                             )
+                    # -------------------------------------------------------
+                    # 替换结束
+                    # -------------------------------------------------------
                     else:
                         ai_result_box = None
                 else:
