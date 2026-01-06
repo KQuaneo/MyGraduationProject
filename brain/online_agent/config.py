@@ -7,3 +7,7 @@ MIC_ID = 1          # 麦克风 ID
 SAMPLE_RATE = 44100  # 采样率
 TTS_VOICE = "zh-CN-XiaoyiNeural"# 这里存放所有的配置参数
 TTS_FILE = "reply.mp3"
+
+
+# 眼睛显示配置
+EYE_FULLSCREEN = True  # True 为全屏, False 为窗口模式
