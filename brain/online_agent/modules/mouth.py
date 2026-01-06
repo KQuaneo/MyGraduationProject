@@ -11,9 +11,23 @@ sys.path.append(root_dir)
 
 import config  # 导入配置
 
+# === 👇 修改开始：定义临时文件夹路径 👇 ===
+
+# 1. 定义 temp 文件夹的具体位置 (online_agent/temp)
+TEMP_DIR = os.path.join(root_dir, "temp")
+
+# 2. 确保这个文件夹一定存在，没有就自动创建
+if not os.path.exists(TEMP_DIR):
+    os.makedirs(TEMP_DIR)
+
 # 使用 config 中的配置
 VOICE = config.TTS_VOICE
-OUTPUT_FILE = config.TTS_FILE
+
+# 3. 强制更改输出路径：只取 config 中的文件名，拼接到 temp 文件夹里
+# 这样无论 config.py 里写的是 "reply.mp3" 还是别的，都会被强制放到 temp 目录下
+OUTPUT_FILE = os.path.join(TEMP_DIR, os.path.basename(config.TTS_FILE))
+
+# === 👆 修改结束 👆 ===
 
 # USB 音箱设备
 AUDIO_DEVICE = "plughw:3,0"

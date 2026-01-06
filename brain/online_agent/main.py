@@ -4,7 +4,7 @@ import json
 import pyaudio
 import threading
 import time
-import array  # 用于替代 audioop 做声道转换
+import array 
 from vosk import Model, KaldiRecognizer
 
 # === 1. 引入配置文件 ===
@@ -14,10 +14,12 @@ except ImportError:
     print("错误：找不到 config.py")
     sys.exit(1)
 
-# === 2. 引入大脑和嘴巴 ===
+# === 2. 引入功能模块 ===
 try:
     from modules.brain import chat_with_brain
     from modules.mouth import speak
+    # 引入视觉模块 (VisionSystem 稍后初始化)
+    from modules.yolov8_qwen import VisionSystem 
 except ImportError as e:
     print(f"导入模块失败: {e}")
     sys.exit(1)
@@ -32,10 +34,10 @@ except ImportError as e:
 
 
 # ==========================================
-#  后台线程：负责听觉、思考和说话
+#  后台逻辑线程：负责 听觉 -> 视觉距离感知 -> 思考 -> 说话
 # ==========================================
-def audio_logic_thread(eye_display):
-    print("🎧 语音线程已启动...")
+def audio_logic_thread(eye_display): 
+    print("🎧 语音/逻辑线程已启动...")
     
     current_dir = os.path.dirname(os.path.abspath(__file__))
     model_path = os.path.join(current_dir, "model")
@@ -44,88 +46,127 @@ def audio_logic_thread(eye_display):
         print(f"错误：找不到模型文件夹 -> {model_path}")
         return
 
-    # 初始化语音识别
+    # 变量初始化
     stream = None
     p = None
+    vision_system = None
+    
+    # 状态标志位
+    is_interacting = False      # 是否正在对话/思考/说话 (如果是，则暂停闲时表情控制)
+    last_vision_emotion = ""    # 记录上一次视觉触发的表情，防止重复刷新UI
     
     try:
-        model = Model(model_path)
-        SAMPLE_RATE = config.SAMPLE_RATE
-        MIC_ID = config.MIC_ID
-        rec = KaldiRecognizer(model, SAMPLE_RATE)
-        
+        # === 1. 先初始化音频 (PyAudio) ===
+        # 必须先于摄像头启动，防止底层资源冲突 (ALSA vs Libcamera)
+        print("🎙️ 正在初始化麦克风...")
         p = pyaudio.PyAudio()
         
-        # --- 智能麦克风选择逻辑 (修复 ID 报错) ---
-        target_mic_id = MIC_ID
+        # 智能麦克风寻找逻辑
+        target_mic_id = config.MIC_ID
         input_channels = 1
         
         try:
-            # 1. 尝试获取指定 ID 的信息
-            dev_info = p.get_device_info_by_index(MIC_ID)
+            dev_info = p.get_device_info_by_index(config.MIC_ID)
             hw_channels = int(dev_info['maxInputChannels'])
-            # 硬件至少2个声道就申请2个，否则申请1个
             input_channels = hw_channels if hw_channels >= 2 else 1
-            print(f"🎤 尝试使用指定麦克风 ID: {MIC_ID}, 声道: {input_channels}")
-            
-        except Exception as e:
-            # 2. 如果指定 ID 失败，尝试寻找系统默认设备
-            print(f"⚠️ 指定 ID {MIC_ID} 无效，尝试使用系统默认麦克风... ({e})")
+            print(f"🎤 使用配置麦克风 ID: {config.MIC_ID}")
+        except Exception:
             try:
                 default_info = p.get_default_input_device_info()
-                target_mic_id = default_info['index'] # 更新为默认 ID
+                target_mic_id = default_info['index']
                 hw_channels = int(default_info['maxInputChannels'])
                 input_channels = hw_channels if hw_channels >= 2 else 1
-                print(f"🎤 已切换到默认麦克风 ID: {target_mic_id} ({default_info['name']})")
-            except Exception as e2:
-                print(f"❌ 致命错误：找不到任何麦克风！{e2}")
-                return # 彻底没救了，退出线程
+                print(f"🎤 切换到默认麦克风 ID: {target_mic_id}")
+            except Exception:
+                print("❌ 致命错误：找不到任何麦克风！")
+                return
 
-        # 3. 打开音频流
         stream = p.open(
             format=pyaudio.paInt16,
             channels=input_channels,
-            rate=SAMPLE_RATE,
+            rate=config.SAMPLE_RATE,
             input=True,
             frames_per_buffer=8000,
             input_device_index=target_mic_id
         )
         stream.start_stream()
+        print("✅ 音频系统就绪！")
+
+        # === 2. 避让冲突 (关键步骤) ===
+        print("⏳ 等待音频驱动稳定 (2秒)...")
+        time.sleep(2) 
+
+        # === 3. 再初始化视觉 (Vision) ===
+        print("👁️ 正在启动视觉系统...")
+        try:
+            vision_system = VisionSystem()
+            print("✅ 视觉系统挂载成功！(YOLO 距离感知运行中)")
+        except Exception as e:
+            print(f"⚠️ 视觉启动失败 (不影响语音): {e}")
+
+        # 加载 Vosk 语音模型
+        print("📚 加载语音识别模型...")
+        model = Model(model_path)
+        rec = KaldiRecognizer(model, config.SAMPLE_RATE)
         
-        print("\n=== ✨ 具身智能小车已就绪 (语音后台运行中) ✨ ===")
+        print("\n=== ✨ 具身智能小车已就绪 (主动感知模式) ✨ ===\n")
         
+        # === 进入主循环 ===
         while True:
-            # 如果主线程的眼睛关闭了，这里也退出
+            # 检查 GUI 是否被用户关闭
             if EYE_DISPLAY_ENABLED and eye_display and not eye_display.running:
-                print("检测到界面关闭，停止语音线程")
                 break
 
-            data = stream.read(8000, exception_on_overflow=False)
-            
-            # --- 修复 audioop 缺失问题 (Python 3.13) ---
-            if input_channels > 1:
-                # 使用 array 库高效处理二进制音频数据
-                # 将原始字节流转换为 16-bit 整数数组 'h'
-                shorts = array.array('h', data)
-                # 提取左声道 (每隔 input_channels 个采样取一个)
-                mono_shorts = shorts[::input_channels]
-                # 转回字节流
-                data = mono_shorts.tobytes()
+            # --- [A] 闲时视觉检测逻辑 (距离感知) ---
+            # 只有在 "没在对话" 且 "视觉系统正常" 时运行
+            if not is_interacting and vision_system and vision_system.running:
+                # 读取 vision_module 计算好的人体面积占比 (0.0 ~ 1.0)
+                area = vision_system.closest_person_area
+                
+                target_emotion = "neutral"
+                
+                # === 📏 距离判断阈值 ===
+                if area > 0.35: 
+                    # 面积超过 35% -> 贴脸了 -> 惊讶
+                    target_emotion = "surprise" 
+                elif area > 0.05: 
+                    # 面积超过 5% -> 正常看到人 -> 开心
+                    target_emotion = "happy"
+                else:
+                    # 面积太小或没人 -> 待机
+                    target_emotion = "neutral"
+                
+                # 只有状态改变时才更新 UI，避免画面闪烁
+                if target_emotion != last_vision_emotion:
+                    if eye_display: eye_display.update_emotion(target_emotion)
+                    last_vision_emotion = target_emotion
             # ---------------------------
 
+            # --- [B] 读取音频 ---
+            data = stream.read(8000, exception_on_overflow=False)
+            
+            # 声道转换 (如果麦克风是双声道的)
+            if input_channels > 1:
+                shorts = array.array('h', data)
+                mono_shorts = shorts[::input_channels]
+                data = mono_shorts.tobytes()
+
+            # --- [C] 语音识别命中 ---
             if rec.AcceptWaveform(data):
                 result = json.loads(rec.Result())
                 text = result.get("text", "").replace(" ", "")
                 
                 if len(text) > 1:
                     print(f"\n👂 听到: {text}")
-                    # 思考时暂停听觉
-                    stream.stop_stream()
                     
-                    # 1. 思考状态
+                    # 1. 进入交互模式 (锁定表情控制权，防止闲时逻辑打断)
+                    is_interacting = True 
+                    stream.stop_stream() # 暂停听
+                    
+                    # 2. 思考状态
                     if eye_display: eye_display.update_emotion("thinking") 
                     
-                    # 2. 调用大脑
+                    # 3. 大脑决策
                     command = chat_with_brain(text)
                     
                     if command:
@@ -133,58 +174,72 @@ def audio_logic_thread(eye_display):
                         reply = command.get('reply')
                         emotion = command.get('emotion', 'neutral')
                         
-                        print(f"🤖 决策: {action} | 情绪: {emotion}")
-                        
-                        # 3. 更新表情
-                        if eye_display:
-                            eye_display.update_emotion(emotion)
-                        
-                        # 4. 说话
+                        print(f"🤖 决策: {action} | 回复: {reply}")
+
+                        # 4. 执行决策 (说话 + 表情)
+                        if eye_display: eye_display.update_emotion(emotion)
                         speak(reply)
-                    
-                    # 恢复听觉
-                    if stream.is_stopped():
-                        stream.start_stream()
+
+                        # 5. 特殊动作：Look (视觉问答)
+                        if action == "look":
+                            if vision_system:
+                                if eye_display: eye_display.update_emotion("thinking")
+                                print("📷 正在调用云端视觉...")
+                                
+                                # 使用更简练的提示词
+                                vision_desc = vision_system.analyze_now(prompt="用中文一句话告诉我画面中最显眼的东西是什么，不要超过20个字。")
+                                
+                                print(f"👀 视觉反馈: {vision_desc}")
+                                if eye_display: eye_display.update_emotion("happy")
+                                speak(f"我看到了：{vision_desc}")
+                            else:
+                                speak("我的眼睛好像还没睁开。")
+
+                        # 6. 特殊动作：运动控制 (预留)
+                        elif action in ["move_forward", "turn_left", "stop"]:
+                            # 这里可以调用你的电机控制函数
+                            pass 
+                        
+                    # 7. 交互结束，恢复听觉，释放闲时检测锁
+                    stream.start_stream()
+                    is_interacting = False
+                    # 重置状态，让下一轮循环重新判断距离
+                    last_vision_emotion = "" 
                         
     except Exception as e:
-        print(f"❌ 语音线程出错: {e}")
+        print(f"❌ 逻辑线程出错: {e}")
         import traceback
         traceback.print_exc()
     finally:
-        if stream: 
-            stream.stop_stream()
-            stream.close()
-        if p: 
-            p.terminate()
+        # 清理资源
+        if vision_system: 
+            vision_system.running = False
+        if stream: stream.stop_stream(); stream.close()
+        if p: p.terminate()
 
 # ==========================================
-#  主线程：只负责 UI (Pygame)
+#  主线程：只负责 UI 渲染
 # ==========================================
 def main():
-    # 1. 准备眼睛对象
+    # 1. 准备眼睛 UI
     eye_display = None
     if EYE_DISPLAY_ENABLED:
         eye_display = EyeDisplay()
-        # 注意：这里我们不调用 start()，因为不要它自己开线程
-        # 我们只是创建实例，稍后手动在主线程跑循环
-        eye_display.running = True # 手动标记为运行中
+        eye_display.running = True
 
-    # 2. 启动语音后台线程
+    # 2. 启动逻辑线程 (把 eye_display 传进去控制)
     t = threading.Thread(target=audio_logic_thread, args=(eye_display,), daemon=True)
     t.start()
 
-    # 3. 在主线程运行 GUI (必须这样做！)
+    # 3. 运行 GUI (主线程阻塞在这里)
     if eye_display:
         try:
-            # 这里的 fullscreen=True/False 根据你的需要调整
-            # 建议使用 True 以获得全屏效果
             eye_display._run_loop(fullscreen=True) 
         except KeyboardInterrupt:
             pass
         finally:
-            eye_display.running = False # 通知子线程退出
+            eye_display.running = False
     else:
-        # 如果没有眼睛模块，主线程就傻等，防止程序退出
         try:
             while True: time.sleep(1)
         except KeyboardInterrupt:
