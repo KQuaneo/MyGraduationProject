@@ -21,7 +21,7 @@ try:
     # 引入视觉模块 (VisionSystem 稍后初始化)
     from modules.yolov8_qwen import VisionSystem 
 except ImportError as e:
-    print(f"导入模块失败: {e}")
+    print(f"导入核心模块失败: {e}")
     sys.exit(1)
 
 # === 3. 引入眼睛显示模块 ===
@@ -32,9 +32,16 @@ except ImportError as e:
     print(f"⚠️ 眼睛显示模块加载失败: {e}")
     EYE_DISPLAY_ENABLED = False
 
+# === 4. [新增] 引入耳朵控制模块 ===
+try:
+    from modules.ears import EarController
+except ImportError as e:
+    print(f"⚠️ 耳朵模块加载失败 (将跳过耳朵控制): {e}")
+    EarController = None
+
 
 # ==========================================
-#  后台逻辑线程：负责 听觉 -> 视觉距离感知 -> 思考 -> 说话
+#  后台逻辑线程：负责 听觉 -> 视觉距离感知 -> 思考 -> 说话 -> 肢体
 # ==========================================
 def audio_logic_thread(eye_display): 
     print("🎧 语音/逻辑线程已启动...")
@@ -50,13 +57,23 @@ def audio_logic_thread(eye_display):
     stream = None
     p = None
     vision_system = None
+    ear_controller = None  # 耳朵控制器对象
     
     # 状态标志位
     is_interacting = False      # 是否正在对话/思考/说话 (如果是，则暂停闲时表情控制)
     last_vision_emotion = ""    # 记录上一次视觉触发的表情，防止重复刷新UI
     
     try:
-        # === 1. 先初始化音频 (PyAudio) ===
+        # === 0. [新增] 初始化耳朵 ===
+        if EarController:
+            print("🐰 正在初始化耳朵舵机...")
+            try:
+                ear_controller = EarController()
+            except Exception as e:
+                print(f"⚠️ 耳朵初始化出错: {e}")
+                ear_controller = None
+
+        # === 1. 初始化音频 (PyAudio) ===
         # 必须先于摄像头启动，防止底层资源冲突 (ALSA vs Libcamera)
         print("🎙️ 正在初始化麦克风...")
         p = pyaudio.PyAudio()
@@ -96,7 +113,7 @@ def audio_logic_thread(eye_display):
         print("⏳ 等待音频驱动稳定 (2秒)...")
         time.sleep(2) 
 
-        # === 3. 再初始化视觉 (Vision) ===
+        # === 3. 初始化视觉 (Vision) ===
         print("👁️ 正在启动视觉系统...")
         try:
             vision_system = VisionSystem()
@@ -136,9 +153,13 @@ def audio_logic_thread(eye_display):
                     # 面积太小或没人 -> 待机
                     target_emotion = "neutral"
                 
-                # 只有状态改变时才更新 UI，避免画面闪烁
+                # 只有状态改变时才更新，避免画面闪烁和舵机抽搐
                 if target_emotion != last_vision_emotion:
+                    # 1. 更新屏幕
                     if eye_display: eye_display.update_emotion(target_emotion)
+                    # 2. [新增] 更新耳朵动作
+                    if ear_controller: ear_controller.update_emotion(target_emotion)
+                    
                     last_vision_emotion = target_emotion
             # ---------------------------
 
@@ -164,7 +185,9 @@ def audio_logic_thread(eye_display):
                     stream.stop_stream() # 暂停听
                     
                     # 2. 思考状态
+                    print("🤔 正在思考...")
                     if eye_display: eye_display.update_emotion("thinking") 
+                    if ear_controller: ear_controller.update_emotion("thinking") # [新增] 耳朵动起来
                     
                     # 3. 大脑决策
                     command = chat_with_brain(text)
@@ -174,10 +197,12 @@ def audio_logic_thread(eye_display):
                         reply = command.get('reply')
                         emotion = command.get('emotion', 'neutral')
                         
-                        print(f"🤖 决策: {action} | 回复: {reply}")
+                        print(f"🤖 决策: {action} | 回复: {reply} | 情绪: {emotion}")
 
-                        # 4. 执行决策 (说话 + 表情)
+                        # 4. 执行决策 (说话 + 表情 + 耳朵)
                         if eye_display: eye_display.update_emotion(emotion)
+                        if ear_controller: ear_controller.update_emotion(emotion) # [新增] 耳朵做对应情绪
+                        
                         speak(reply)
 
                         # 5. 特殊动作：Look (视觉问答)
@@ -190,7 +215,11 @@ def audio_logic_thread(eye_display):
                                 vision_desc = vision_system.analyze_now(prompt="用中文一句话告诉我画面中最显眼的东西是什么，不要超过20个字。")
                                 
                                 print(f"👀 视觉反馈: {vision_desc}")
+                                
+                                # 看完后开心
                                 if eye_display: eye_display.update_emotion("happy")
+                                if ear_controller: ear_controller.update_emotion("happy") # [新增]
+                                
                                 speak(f"我看到了：{vision_desc}")
                             else:
                                 speak("我的眼睛好像还没睁开。")
