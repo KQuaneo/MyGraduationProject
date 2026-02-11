@@ -74,19 +74,25 @@ class VisionSystem:
         self.yolo = None
         self.running = True
         
-        # [修改] 存储最近的人体面积占比 (0.0 ~ 1.0)
+        # 存储最近的人体面积占比 (0.0 ~ 1.0)
         self.closest_person_area = 0.0 
+        
+        # [修改 1] 新增：最近的人体中心点坐标 
+        # Range: -1.0 (最左) ~ 0.0 (正中) ~ 1.0 (最右)
+        # None 表示没看到人
+        self.closest_person_center_x = None 
         
         # 启动后台线程
         threading.Thread(target=self._camera_loop, daemon=True).start()
         threading.Thread(target=self._ai_loop, daemon=True).start()
         threading.Thread(target=self._server_loop, daemon=True).start()
         
-        print("✅ [Vision] 视觉系统已启动 (YOLO 距离感知 + 云端识别)")
+        print("✅ [Vision] 视觉系统已启动 (YOLO 距离+方向感知 + 云端识别)")
 
     def _camera_loop(self):
         global latest_frame
         picam2 = Picamera2()
+        # 注意：这里设定了采集分辨率为 640x480
         config = picam2.create_preview_configuration(
             main={"size": (640, 480), "format": "RGB888"},
             controls={"AfMode": 2}
@@ -96,10 +102,8 @@ class VisionSystem:
         while self.running:
             img_rgb = picam2.capture_array()
             with frame_lock:
-                # 如果你之前调好了颜色，就保留你有效的那个方案
-                # 这里的方案是如果不转换颜色正常，就直接赋值
                 latest_frame = img_rgb
-                # 如果颜色反了(蓝色脸)，请解开下面这行的注释:
+                # 如果颜色反了，解开下面这行
                 # latest_frame = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2BGR)
             time.sleep(0.03)
         picam2.stop()
@@ -109,8 +113,10 @@ class VisionSystem:
         print("🚀 [Vision] Loading YOLO...")
         self.yolo = YOLO(YOLO_MODEL)
         
-        # 画面总像素 (用于计算占比)
-        TOTAL_PIXELS = 640 * 480
+        # 画面尺寸 (必须与 _camera_loop 中的一致)
+        FRAME_WIDTH = 640
+        FRAME_HEIGHT = 480
+        TOTAL_PIXELS = FRAME_WIDTH * FRAME_HEIGHT
         
         while self.running:
             with frame_lock:
@@ -122,8 +128,9 @@ class VisionSystem:
             # YOLO 推理
             results = self.yolo(current_frame, stream=True, verbose=False, imgsz=320)
             
-            # [核心修改] 计算最大人体面积占比
+            # 初始化本帧的数据
             max_area_ratio = 0.0
+            target_center_x = None # 默认没找到人
             
             for r in results:
                 current_frame = r.plot()
@@ -132,25 +139,43 @@ class VisionSystem:
                     cls_id = int(box.cls[0])
                     
                     if cls_id == 0: # 0 代表 person
-                        # 获取坐标
-                        x1, y1, x2, y2 = box.xyxy[0]
-                        # 计算当前这个人的面积
+                        # 获取坐标 (x1, y1, x2, y2)
+                        x1, y1, x2, y2 = box.xyxy[0].cpu().numpy() # 确保转为 numpy 处理
+                        
+                        # 计算面积
                         width = x2 - x1
                         height = y2 - y1
                         area = width * height
                         
-                        # 计算占比 (面积 / 总像素)
+                        # 计算占比
                         ratio = float(area) / TOTAL_PIXELS
                         
-                        # 只要最大的那个（离得最近的）
+                        # [修改 2] 核心逻辑：找最大（最近）的人，并记录它的中心点
                         if ratio > max_area_ratio:
                             max_area_ratio = ratio
+                            
+                            # 计算中心点像素坐标 (0 ~ 640)
+                            center_pixel_x = (x1 + x2) / 2
+                            
+                            # 归一化到 -1.0 ~ 1.0
+                            # (当前x - 图宽一半) / 图宽一半
+                            target_center_x = (center_pixel_x - FRAME_WIDTH / 2) / (FRAME_WIDTH / 2)
             
-            # 更新全局变量 (main.py 会读取这个值)
+            # [修改 3] 更新全局变量供 Main 使用
             self.closest_person_area = max_area_ratio
+            self.closest_person_center_x = target_center_x
 
             # 绘制状态文字
-            cv2.putText(current_frame, analysis_result, (10, 470), 
+            status_text = f"Area: {max_area_ratio:.2f}"
+            if target_center_x is not None:
+                status_text += f" | X: {target_center_x:.2f}"
+            else:
+                status_text += " | No Target"
+                
+            cv2.putText(current_frame, status_text, (10, 450), 
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+            
+            cv2.putText(current_frame, analysis_result, (10, 475), 
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
 
             with frame_lock:
@@ -162,11 +187,11 @@ class VisionSystem:
         print(f"📡 [Vision] 视频流地址: http://<IP>:{HOST_PORT}/stream.mjpg")
         server.serve_forever()
 
-    def analyze_now(self, prompt="Describe this image broadly."):
+    def analyze_now(self, prompt="请用中文描述你看到的画面。"):
         global analysis_result, latest_frame, is_analyzing
         
         if is_analyzing:
-            return "我正在看呢..."
+            return "我正在看呢，请稍等..."
         
         with frame_lock:
             if latest_frame is None:
@@ -175,7 +200,7 @@ class VisionSystem:
 
         is_analyzing = True
         analysis_result = "Thinking (Cloud AI)..."
-        print("☁️ [Vision] 正在上传图片给通义千问...")
+        print(f"☁️ [Vision] 正在请求通义千问... (Prompt: {prompt})")
 
         try:
             # 路径处理: 存到 temp 文件夹
@@ -188,12 +213,11 @@ class VisionSystem:
 
             temp_file_path = os.path.join(temp_dir, "vision_cache.jpg")
             
-            # 保存图片 (注意颜色空间，如果是RGB可能需要转BGR给imwrite，视情况而定)
-            # 这里默认直接存，如果存下来的图片颜色怪，可以用 cv2.cvtColor 转一下
+            # 保存图片
             cv2.imwrite(temp_file_path, img_to_upload)
-            
             img_path_for_api = f"file://{temp_file_path}"
 
+            # 调用 DashScope API
             response = dashscope.MultiModalConversation.call(
                 model=CLOUD_MODEL,
                 messages=[{
@@ -208,14 +232,18 @@ class VisionSystem:
             if response.status_code == HTTPStatus.OK:
                 text = response.output.choices[0].message.content[0]['text']
                 print(f"✅ [Vision] 识别结果: {text}")
-                analysis_result = text[:20] + "..." 
+                
+                # 更新画面上的文字显示
+                display_text = text[:15] + "..." if len(text) > 15 else text
+                analysis_result = display_text
+                
                 return text
             else:
-                print(f"Error: {response.code}")
+                print(f"Error: {response.code} - {response.message}")
                 return "看不清，云端出错了。"
 
         except Exception as e:
             print(f"❌ [Vision] Error: {e}")
             return "眼睛出问题了。"
         finally:
-            is_analyzing = False
+            is_analyzing = False3

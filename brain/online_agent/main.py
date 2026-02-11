@@ -39,7 +39,12 @@ except ImportError as e:
     print(f"⚠️ 耳朵模块加载失败 (将跳过耳朵控制): {e}")
     EarController = None
 
-
+# === 5. [新增] 引入底盘控制模块 ===
+try:
+    from modules.chassis import ChassisController
+except ImportError as e:
+    print(f"⚠️ 底盘模块加载失败: {e}")
+    ChassisController = None
 # ==========================================
 #  后台逻辑线程：负责 听觉 -> 视觉距离感知 -> 思考 -> 说话 -> 肢体
 # ==========================================
@@ -58,6 +63,7 @@ def audio_logic_thread(eye_display):
     p = None
     vision_system = None
     ear_controller = None  # 耳朵控制器对象
+    chassis_controller = None
     
     # 状态标志位
     is_interacting = False      # 是否正在对话/思考/说话 (如果是，则暂停闲时表情控制)
@@ -72,6 +78,19 @@ def audio_logic_thread(eye_display):
             except Exception as e:
                 print(f"⚠️ 耳朵初始化出错: {e}")
                 ear_controller = None
+
+        # ==================================================
+        if ChassisController:
+            print("🛹 正在初始化底盘舵机 (PCA9685)...")
+            try:
+                # ⚠️ 注意：如果你把底盘舵机插在 PCA9685 的第 0 号口，这里写 0
+                # 如果插在第 15 号口，这里写 15，以此类推
+                chassis_controller = ChassisController(channel_index=0)
+            except ValueError as e:
+                print(f"⚠️ 底盘初始化失败 (可能是I2C没连接好): {e}")
+                chassis_controller = None
+            except Exception as e:
+                print(f"⚠️ 底盘未知错误: {e}")
 
         # === 1. 初始化音频 (PyAudio) ===
         # 必须先于摄像头启动，防止底层资源冲突 (ALSA vs Libcamera)
@@ -208,19 +227,35 @@ def audio_logic_thread(eye_display):
                         # 5. 特殊动作：Look (视觉问答)
                         if action == "look":
                             if vision_system:
+                                # 1. 状态反馈：正在思考
                                 if eye_display: eye_display.update_emotion("thinking")
-                                print("📷 正在调用云端视觉...")
+                                if ear_controller: ear_controller.update_emotion("thinking")
                                 
-                                # 使用更简练的提示词
-                                vision_desc = vision_system.analyze_now(prompt="用中文一句话告诉我画面中最显眼的东西是什么，不要超过20个字。")
+                                print(f"📷 正在调用云端视觉...")
+
+                                # === 核心修改逻辑 Start ===
+                                # 判断用户是“随便看看”还是“有具体问题”
+                                # 如果用户说的话很短（例如“看看”、“看一眼”），则用通用描述
+                                if len(text) < 4 or text in ["看看", "看一眼", "前面是什么", "描述一下"]:
+                                    dynamic_prompt = "请用中文简短描述一下你看到的画面，重点关注最显眼的物体。"
+                                    print("👀 模式：通用描述")
+                                else:
+                                    # 否则，把用户的原话(text)放进提示词里
+                                    dynamic_prompt = f"请根据画面回答用户的问题：{text}？请用中文简短回答。"
+                                    print(f"👀 模式：精准问答 (问题: {text})")
+                                # === 核心修改逻辑 End ===
+
+                                # 调用视觉模块
+                                vision_desc = vision_system.analyze_now(prompt=dynamic_prompt)
                                 
                                 print(f"👀 视觉反馈: {vision_desc}")
                                 
-                                # 看完后开心
+                                # 2. 获取结果后：开心
                                 if eye_display: eye_display.update_emotion("happy")
-                                if ear_controller: ear_controller.update_emotion("happy") # [新增]
+                                if ear_controller: ear_controller.update_emotion("happy")
                                 
-                                speak(f"我看到了：{vision_desc}")
+                                # 3. 说话
+                                speak(vision_desc)
                             else:
                                 speak("我的眼睛好像还没睁开。")
 
