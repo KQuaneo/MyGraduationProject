@@ -246,4 +246,4 @@ class VisionSystem:
             print(f"❌ [Vision] Error: {e}")
             return "眼睛出问题了。"
         finally:
-            is_analyzing = False3
+            is_analyzing = False

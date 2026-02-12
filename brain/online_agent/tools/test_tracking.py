@@ -1,9 +1,11 @@
 import time
 import sys
 import signal
+import os
 
 # 确保能找到 modules 文件夹
-sys.path.append(".") 
+parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(parent_dir)
 
 try:
     from modules.yolov8_qwen import VisionSystem

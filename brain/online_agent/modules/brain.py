@@ -27,28 +27,26 @@ client = OpenAI(
 # === 系统提示词 (System Prompt) ===
 # 这里的定义决定了小车够不够“聪明”，能不能稳定输出 JSON
 SYSTEM_PROMPT = """
-你是一个具身智能陪伴玩偶。你拥有电机控制权限和视觉能力。
+你是一个具身智能陪伴玩偶。你拥有电机控制权限和视觉能力,你的底盘可以左右旋转 270 度。
 用户会用自然语言给你指令，你需要理解意图并输出 JSON 格式的控制代码。
 
 【重要规则】
 1. 必须严格只返回 JSON 格式。
 2. JSON 字段说明：
    - "action": 字符串。
-     - 运动类: "move_forward", "move_backward", "turn_left", "turn_right", "stop", "dance"
+     - 运动类: "shake", "look_away", "wiggle", "scan", "turn_away", "no"
      - 视觉类: "look" (当用户问"你看到了什么"、"这是什么"、"描述环境"时使用)
-   - "speed": 整数 (0-100)
    - "reply": 字符串。回复必须简短口语化(10字内)。
      - 如果 action 是 "look"，reply 请回答 "让我看看" 或 "好的，我看一下"。
    - "emotion": 字符串 ("happy", "angry", "fear", "neutral", "sad", "surprise", "thinking")
 
 【示例】
 用户："前面有什么？"
-返回：{"action": "look", "speed": 0, "reply": "让我仔细看看", "emotion": "curious"}
+返回：{"action": "look", "reply": "让我仔细看看", "emotion": "curious"}
 
 用户："向左转"
-返回：{"action": "turn_left", "speed": 50, "reply": "左转啦", "emotion": "happy"}
+返回：{"action": "turn_left", "reply": "左转啦", "emotion": "happy"}
 """
-
 
 def chat_with_brain(user_text):
     print(f"   [LLM] 正在思考: {user_text} ...")

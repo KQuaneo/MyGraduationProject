@@ -24,7 +24,7 @@ class EarController:
             self.pca.frequency = 50
             
             # 初始化两个舵机
-            self.servo0 = servo.Servo(self.pca.channels[0], min_pulse=500, max_pulse=2500)
+            self.servo0 = servo.Servo(self.pca.channels[2], min_pulse=500, max_pulse=2500)
             self.servo3 = servo.Servo(self.pca.channels[3], min_pulse=500, max_pulse=2500)
             
             self.enabled = True

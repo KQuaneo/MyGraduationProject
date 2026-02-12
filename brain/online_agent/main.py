@@ -156,6 +156,16 @@ def audio_logic_thread(eye_display):
             # --- [A] 闲时视觉检测逻辑 (距离感知) ---
             # 只有在 "没在对话" 且 "视觉系统正常" 时运行
             if not is_interacting and vision_system and vision_system.running:
+
+                # 1. 获取视觉中心点 (和你测试代码里的一样)
+                # 使用 getattr 防止 vision_system 还没初始化好报错
+                center_x = getattr(vision_system, 'closest_person_center_x', None)
+                
+                # 2. 传给底盘 (和你测试代码里的一样)
+                if chassis_controller:
+                    chassis_controller.update_vision_data(center_x)
+
+
                 # 读取 vision_module 计算好的人体面积占比 (0.0 ~ 1.0)
                 area = vision_system.closest_person_area
                 
@@ -199,76 +209,120 @@ def audio_logic_thread(eye_display):
                 if len(text) > 1:
                     print(f"\n👂 听到: {text}")
                     
-                    # 1. 进入交互模式 (锁定表情控制权，防止闲时逻辑打断)
+                    # 1. 进入交互模式
+                    # (设为 True 后，顶部的 [A] 闲时逻辑会停止更新底盘，方便我们要控制它)
                     is_interacting = True 
                     stream.stop_stream() # 暂停听
                     
                     # 2. 思考状态
                     print("🤔 正在思考...")
                     if eye_display: eye_display.update_emotion("thinking") 
-                    if ear_controller: ear_controller.update_emotion("thinking") # [新增] 耳朵动起来
+                    if ear_controller: ear_controller.update_emotion("thinking")
                     
                     # 3. 大脑决策
                     command = chat_with_brain(text)
                     
                     if command:
-                        action = command.get('action')
+                        action = command.get('action') # 例如: "shake", "look_away", "look"
                         reply = command.get('reply')
                         emotion = command.get('emotion', 'neutral')
                         
                         print(f"🤖 决策: {action} | 回复: {reply} | 情绪: {emotion}")
 
-                        # 4. 执行决策 (说话 + 表情 + 耳朵)
+                        # === [新增] 4. 激活身体动作 (Chassis) ===
+                        # 只有当 chassis 存在，且 LLM 真的输出了动作时才执行
+                        if chassis_controller and action and action not in ["none", "look"]:
+                            # "look" 动作在下面单独处理，这里处理摇头、转身等
+                            chassis_controller.add_action(action)
+
+                        # 5. 执行表情 & 耳朵
                         if eye_display: eye_display.update_emotion(emotion)
-                        if ear_controller: ear_controller.update_emotion(emotion) # [新增] 耳朵做对应情绪
+                        if ear_controller: ear_controller.update_emotion(emotion)
                         
+                        # 6. 开口说话 (此时底盘可能正在转动，实现“边动边说”的效果)
                         speak(reply)
 
-                        # 5. 特殊动作：Look (视觉问答)
+                        # 7. 特殊动作：Look (视觉问答)
                         if action == "look":
                             if vision_system:
-                                # 1. 状态反馈：正在思考
+                                # [新增] 拍照前，为了防止底盘刚做完动作歪着，强制更新一次视觉追踪
+                                # 或者你可以简单地让它回正: chassis_controller._set_physical_servo(0)
+                                if chassis_controller:
+                                    # 尝试获取最新的人脸位置，确保对着人拍
+                                    center_x = getattr(vision_system, 'closest_person_center_x', 0)
+                                    if center_x is not None:
+                                        chassis_controller.update_vision_data(center_x)
+                                    else:
+                                        # 没人就回正
+                                        chassis_controller.update_vision_data(0)
+                                    
+                                    # 给一点时间让舵机转过去 (0.5秒)
+                                    time.sleep(0.5)
+
+                                # 更新UI状态
                                 if eye_display: eye_display.update_emotion("thinking")
                                 if ear_controller: ear_controller.update_emotion("thinking")
                                 
                                 print(f"📷 正在调用云端视觉...")
 
-                                # === 核心修改逻辑 Start ===
-                                # 判断用户是“随便看看”还是“有具体问题”
-                                # 如果用户说的话很短（例如“看看”、“看一眼”），则用通用描述
+                                # === 视觉提示词逻辑 ===
                                 if len(text) < 4 or text in ["看看", "看一眼", "前面是什么", "描述一下"]:
                                     dynamic_prompt = "请用中文简短描述一下你看到的画面，重点关注最显眼的物体。"
                                     print("👀 模式：通用描述")
                                 else:
-                                    # 否则，把用户的原话(text)放进提示词里
                                     dynamic_prompt = f"请根据画面回答用户的问题：{text}？请用中文简短回答。"
                                     print(f"👀 模式：精准问答 (问题: {text})")
-                                # === 核心修改逻辑 End ===
 
                                 # 调用视觉模块
                                 vision_desc = vision_system.analyze_now(prompt=dynamic_prompt)
-                                
                                 print(f"👀 视觉反馈: {vision_desc}")
                                 
-                                # 2. 获取结果后：开心
+                                # 结果反馈
                                 if eye_display: eye_display.update_emotion("happy")
                                 if ear_controller: ear_controller.update_emotion("happy")
                                 
-                                # 3. 说话
                                 speak(vision_desc)
                             else:
                                 speak("我的眼睛好像还没睁开。")
-
-                        # 6. 特殊动作：运动控制 (预留)
-                        elif action in ["move_forward", "turn_left", "stop"]:
-                            # 这里可以调用你的电机控制函数
-                            pass 
                         
-                    # 7. 交互结束，恢复听觉，释放闲时检测锁
-                    stream.start_stream()
+                    # 8. 交互结束，恢复听觉，释放闲时检测锁
+                    # === 🛡️ 安全恢复听觉 (防止舵机电流干扰麦克风) ===
+                    try:
+                        stream.start_stream()
+                    except OSError as e:
+                        print(f"⚠️ 麦克风连接中断 (可能是舵机干扰): {e}")
+                        print("🔄 正在尝试重建音频流...")
+                        try:
+                            # 1. 彻底关闭旧流
+                            stream.close()
+                            # 2. 重新打开流 (参数必须和初始化时一致)
+                            stream = p.open(
+                                format=pyaudio.paInt16,
+                                channels=input_channels,
+                                rate=config.SAMPLE_RATE,
+                                input=True,
+                                frames_per_buffer=8000,
+                                input_device_index=target_mic_id
+                            )
+                            # 3. 再次尝试启动
+                            stream.start_stream()
+                            print("✅ 麦克风重连成功！")
+                        except Exception as e2:
+                            print(f"❌ 致命错误，无法恢复麦克风: {e2}")
+                            break # 退出循环，重启线程
+
                     is_interacting = False
+                    # 👇👇👇 [新增] 强制恢复底盘追踪 👇👇👇
+                    # ==========================================
+                    if chassis_controller and vision_system:
+                        # 立刻读取一次当前的人脸位置
+                        center_x = getattr(vision_system, 'closest_person_center_x', None)
+                        # 喂给底盘，让它醒过来
+                        chassis_controller.update_vision_data(center_x)
+                        print("🔄 底盘追踪已恢复。")
+                        
                     # 重置状态，让下一轮循环重新判断距离
-                    last_vision_emotion = "" 
+                    last_vision_emotion = ""
                         
     except Exception as e:
         print(f"❌ 逻辑线程出错: {e}")
