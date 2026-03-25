@@ -352,7 +352,8 @@ def main():
     # 3. 运行 GUI (主线程阻塞在这里)
     if eye_display:
         try:
-            eye_display._run_loop(fullscreen=True) 
+            # 根据 config 配置决定是否全屏
+            eye_display._run_loop(fullscreen=config.EYE_FULLSCREEN) 
         except KeyboardInterrupt:
             pass
         finally:

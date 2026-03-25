@@ -24,8 +24,9 @@ class EarController:
             self.pca.frequency = 50
             
             # 初始化两个舵机
-            self.servo0 = servo.Servo(self.pca.channels[2], min_pulse=500, max_pulse=2500)
-            self.servo3 = servo.Servo(self.pca.channels[3], min_pulse=500, max_pulse=2500)
+            # 注意：通道 3 损坏，右耳改用通道 1
+            self.servo0 = servo.Servo(self.pca.channels[2], min_pulse=500, max_pulse=2500)  # 左耳
+            self.servo3 = servo.Servo(self.pca.channels[1], min_pulse=500, max_pulse=2500)  # 右耳（原通道 3 损坏）
             
             self.enabled = True
             print("✅ 耳朵舵机初始化成功")
@@ -70,9 +71,15 @@ class EarController:
             delay = frame["delay"]
             
             try:
-                # 限制角度在安全范围 0-180
-                if self.servo0: self.servo0.angle = max(0, min(180, angle0))
-                if self.servo3: self.servo3.angle = max(0, min(180, angle3))
+                # 限制角度在物理 0~30 度范围
+                # 输入 0 -> 0度, 30 -> 30度
+                def map_angle(val):
+                    # 限制输入范围 0-30
+                    val = max(0, min(30, val))
+                    return val
+
+                if self.servo0: self.servo0.angle = map_angle(angle0)
+                if self.servo3: self.servo3.angle = map_angle(angle3)
                 time.sleep(delay)
             except Exception as e:
                 print(f"舵机驱动错误: {e}")

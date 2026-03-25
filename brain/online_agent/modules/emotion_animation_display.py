@@ -6,8 +6,9 @@ import math
 import random
 
 # --- 全局配置 (调优后的配色方案) ---
+# 根据实际屏幕分辨率设置 (HDMI 屏幕为 1024x600)
 SCREEN_WIDTH = 1024
-SCREEN_HEIGHT = 768
+SCREEN_HEIGHT = 600
 
 # 配色：赛博/二次元风格
 BG_COLOR = (20, 20, 28)           # 深邃背景
@@ -113,6 +114,7 @@ class EyeDisplay:
 
     def _run_loop(self, fullscreen=True):
         pygame.init()
+        print(f"🖥️ 初始化显示: 全屏={fullscreen}, 分辨率={SCREEN_WIDTH}x{SCREEN_HEIGHT}")
         flags = pygame.FULLSCREEN if fullscreen else pygame.NOFRAME
         if not fullscreen:
             # 如果不是全屏，设置一个合理的窗口大小
@@ -122,6 +124,7 @@ class EyeDisplay:
             
         pygame.display.set_caption("Anime Robot Eyes")
         pygame.mouse.set_visible(False)
+        print(f"✅ 显示初始化成功: 屏幕尺寸={self.screen.get_size()}")
         self.clock = pygame.time.Clock()
         self._init_props()
         self.running = True
