@@ -334,6 +334,26 @@ def audio_logic_thread(eye_display):
             vision_system.running = False
         if stream: stream.stop_stream(); stream.close()
         if p: p.terminate()
+        
+        # [新增] 停止底盘和耳朵控制器
+        if chassis_controller:
+            try:
+                chassis_controller.stop()
+            except Exception as e:
+                print(f"⚠️ 停止底盘时出错: {e}")
+        
+        if ear_controller:
+            try:
+                ear_controller.stop()
+            except Exception as e:
+                print(f"⚠️ 停止耳朵时出错: {e}")
+        
+        # [新增] 释放 PCA9685 资源，防止舵机异响
+        try:
+            from modules.pca9685_manager import PCA9685Manager
+            PCA9685Manager.deinit()
+        except Exception as e:
+            print(f"⚠️ PCA9685 释放时出错: {e}")
 
 # ==========================================
 #  主线程：只负责 UI 渲染

@@ -1,9 +1,7 @@
 import time
 import threading
-import board
-import busio
-from adafruit_pca9685 import PCA9685
 from adafruit_motor import servo
+from modules.pca9685_manager import get_channel
 
 class ChassisController:
     def __init__(self, channel_index=0):
@@ -12,18 +10,15 @@ class ChassisController:
         :param channel_index: 舵机插在 PCA9685 板上的第几个口 (0-15)
         """
         self.running = True
+        self.channel_index = channel_index
         
-        # === 1. 初始化 I2C 和 PCA9685 ===
+        # === 1. 使用共享 PCA9685 实例 ===
         try:
-            i2c = board.I2C() 
-            self.pca = PCA9685(i2c)
-            self.pca.frequency = 50 # 舵机标准频率 50Hz
-            
             # === 2. 初始化 DS3115 270度舵机 ===
             # actuation_range=270: 告诉库这是一个270度的舵机
             # min_pulse/max_pulse: 对应 500-2500us
             self.servo = servo.Servo(
-                self.pca.channels[channel_index], 
+                get_channel(channel_index), 
                 actuation_range=270, 
                 min_pulse=500, 
                 max_pulse=2500
@@ -158,3 +153,18 @@ class ChassisController:
                 self._set_physical_servo(angle)
                 time.sleep(0.1)
             self._set_physical_servo(0) # 回正
+
+    def stop(self):
+        """停止底盘控制器，关闭舵机输出"""
+        print("🛑 正在停止底盘控制器...")
+        self.running = False
+        # 等待后台线程结束
+        if hasattr(self, 'thread') and self.thread.is_alive():
+            self.thread.join(timeout=1.0)
+        # 关闭舵机 PWM 输出
+        try:
+            from modules.pca9685_manager import get_channel
+            get_channel(self.channel_index).duty_cycle = 0
+            print("🔌 底盘舵机已关闭")
+        except Exception as e:
+            print(f"⚠️ 关闭底盘舵机时出错: {e}")
