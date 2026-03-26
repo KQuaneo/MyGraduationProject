@@ -6,6 +6,7 @@ import threading
 import time
 import array 
 from vosk import Model, KaldiRecognizer
+import re  # 用于正则匹配唤醒词
 
 # === 1. 引入配置文件 ===
 try:
@@ -68,6 +69,22 @@ def audio_logic_thread(eye_display):
     # 状态标志位
     is_interacting = False      # 是否正在对话/思考/说话 (如果是，则暂停闲时表情控制)
     last_vision_emotion = ""    # 记录上一次视觉触发的表情，防止重复刷新UI
+    
+    # === [新增] 唤醒词相关状态 ===
+    is_awake = False            # 是否处于唤醒状态
+    AWAKE_TIMEOUT = 15          # 唤醒后超时时间（秒）
+    last_awake_time = 0         # 上次唤醒时间
+    
+    # 唤醒词列表（支持多种变体）
+    WAKE_WORDS = ["小灰", "小辉", "小慧", "小惠", "晓灰", "晓辉"]
+    
+    def check_wake_word(text):
+        """检查是否包含唤醒词"""
+        text = text.lower().replace(" ", "")
+        for word in WAKE_WORDS:
+            if word in text:
+                return True
+        return False
     
     try:
         # === 0. [新增] 初始化耳朵 ===
@@ -145,7 +162,8 @@ def audio_logic_thread(eye_display):
         model = Model(model_path)
         rec = KaldiRecognizer(model, config.SAMPLE_RATE)
         
-        print("\n=== ✨ 具身智能小车已就绪 (主动感知模式) ✨ ===\n")
+        print("\n=== ✨ 具身智能小车已就绪 (主动感知模式) ✨ ===")
+        print("💤 睡眠模式：人物追踪运行中，呼叫'小灰小灰'唤醒我\n")
         
         # === 进入主循环 ===
         while True:
@@ -208,6 +226,37 @@ def audio_logic_thread(eye_display):
                 
                 if len(text) > 1:
                     print(f"\n👂 听到: {text}")
+                    
+                    # === [新增] 唤醒词检测逻辑 ===
+                    if not is_awake:
+                        # 未唤醒状态：只检测唤醒词
+                        if check_wake_word(text):
+                            print("🔔 唤醒词检测成功！")
+                            is_awake = True
+                            last_awake_time = time.time()
+                            
+                            # 回复"我在"
+                            if eye_display: eye_display.update_emotion("happy")
+                            if ear_controller: ear_controller.update_emotion("happy")
+                            speak("我在")
+                            print("💬 回复：我在")
+                            print("🎤 唤醒成功，开始监听指令...")
+                        else:
+                            # 不是唤醒词，忽略（但继续人物追踪）
+                            print(f"💤 睡眠中，忽略非唤醒词")
+                        continue  # 跳过本次循环，继续监听
+                    
+                    # === 已唤醒状态 ===
+                    # 检查是否超时
+                    if time.time() - last_awake_time > AWAKE_TIMEOUT:
+                        print("⏰ 唤醒超时，进入睡眠模式...")
+                        is_awake = False
+                        if eye_display: eye_display.update_emotion("neutral")
+                        if ear_controller: ear_controller.update_emotion("neutral")
+                        continue  # 回到睡眠状态
+                    
+                    # 更新唤醒时间（只要有有效输入就刷新）
+                    last_awake_time = time.time()
                     
                     # 1. 进入交互模式
                     # (设为 True 后，顶部的 [A] 闲时逻辑会停止更新底盘，方便我们要控制它)
