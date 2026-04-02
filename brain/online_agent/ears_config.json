@@ -4,23 +4,23 @@
   ],
   "happy": [
     {"angles": [0, 0], "delay": 0.2},
-    {"angles": [15, 15], "delay": 0.2},
+    {"angles": [10, 10], "delay": 0.2},
     {"angles": [0, 0], "delay": 0.2},
-    {"angles": [15, 15], "delay": 0.2},
+    {"angles": [10, 10], "delay": 0.2},
     {"angles": [0, 0], "delay": 0.1}
   ],
   "surprise": [
-    {"angles": [30, 30], "delay": 1.0},
+    {"angles": [20, 20], "delay": 1.0},
     {"angles": [0, 0], "delay": 0.5}
   ],
   "thinking": [
-    {"angles": [10, 0], "delay": 0.3},
-    {"angles": [0, 10], "delay": 0.3},
-    {"angles": [10, 0], "delay": 0.3},
-    {"angles": [0, 10], "delay": 0.3},
+    {"angles": [7, 0], "delay": 0.3},
+    {"angles": [0, 7], "delay": 0.3},
+    {"angles": [7, 0], "delay": 0.3},
+    {"angles": [0, 7], "delay": 0.3},
     {"angles": [0, 0], "delay": 0.1}
   ],
   "sad": [
-    {"angles": [5, 5], "delay": 2.0}
+    {"angles": [3, 3], "delay": 2.0}
   ]
 }

@@ -10,4 +10,4 @@ TTS_FILE = "reply.mp3"
 
 
 # 眼睛显示配置
-EYE_FULLSCREEN = True  # True 为全屏, False 为窗口模式
+EYE_FULLSCREEN = False  # True 为全屏, False 为窗口模式
