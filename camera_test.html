@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>树莓派摄像头测试</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            text-align: center;
+        }
+        h1 {
+            color: #333;
+        }
+        #videoContainer {
+            margin: 20px 0;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        video {
+            width: 100%;
+            max-width: 640px;
+            background: #f0f0f0;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        #status {
+            margin: 20px 0;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .success {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .error {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        .info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+        }
+        #cameraList {
+            text-align: left;
+            max-width: 640px;
+            margin: 20px auto;
+            background: #f9f9f9;
+            padding: 15px;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <h1>📷 树莓派摄像头测试</h1>
+
+    <div id="status" class="info">
+        点击下面的按钮开始测试摄像头
+    </div>
+
+    <button id="listCameras" onclick="listCameras()">列出所有摄像头</button>
+    <button id="startCamera" onclick="startCamera()">启动摄像头</button>
+    <button id="stopCamera" onclick="stopCamera()" disabled>停止摄像头</button>
+
+    <div id="cameraList" style="display: none;">
+        <h3>可用的摄像头设备：</h3>
+        <ul id="cameraDevices"></ul>
+    </div>
+
+    <div id="videoContainer">
+        <video id="videoElement" autoplay playsinline></video>
+    </div>
+
+    <div id="info">
+        <p>如果摄像头无法正常工作，请检查：</p>
+        <ul style="text-align: left; max-width: 600px; margin: 0 auto;">
+            <li>浏览器是否允许访问摄像头（检查地址栏的权限图标）</li>
+            <li>摄像头是否被其他程序占用</li>
+            <li>摄像头驱动是否正常安装</li>
+            <li>尝试使用不同的浏览器（Chrome、Edge、Firefox）</li>
+        </ul>
+    </div>
+
+    <script>
+        let stream = null;
+
+        function updateStatus(message, type) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.textContent = message;
+            statusDiv.className = type;
+        }
+
+        async function listCameras() {
+            try {
+                // 首先请求一个流来获取权限
+                const tempStream = await navigator.mediaDevices.getUserMedia({ video: true });
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const videoDevices = devices.filter(device => device.kind === 'videoinput');
+
+                const cameraListDiv = document.getElementById('cameraList');
+                const cameraDevicesUl = document.getElementById('cameraDevices');
+                cameraDevicesUl.innerHTML = '';
+
+                if (videoDevices.length === 0) {
+                    cameraDevicesUl.innerHTML = '<li>没有检测到摄像头设备</li>';
+                } else {
+                    videoDevices.forEach((device, index) => {
+                        const li = document.createElement('li');
+                        li.textContent = `摄像头 ${index + 1}: ${device.label || '未命名设备'} (ID: ${device.deviceId})`;
+                        cameraDevicesUl.appendChild(li);
+                    });
+                }
+
+                cameraListDiv.style.display = 'block';
+                updateStatus(`找到 ${videoDevices.length} 个摄像头设备`, 'success');
+
+                // 关闭临时流
+                tempStream.getTracks().forEach(track => track.stop());
+            } catch (error) {
+                console.error('列出摄像头失败:', error);
+                updateStatus(`列出摄像头失败: ${error.message}`, 'error');
+
+                // 即使没有获取到流，也尝试列出设备
+                try {
+                    const devices = await navigator.mediaDevices.enumerateDevices();
+                    const videoDevices = devices.filter(device => device.kind === 'videoinput');
+
+                    const cameraListDiv = document.getElementById('cameraList');
+                    const cameraDevicesUl = document.getElementById('cameraDevices');
+                    cameraDevicesUl.innerHTML = '';
+
+                    if (videoDevices.length === 0) {
+                        cameraDevicesUl.innerHTML = '<li>没有检测到摄像头设备（可能需要先授予摄像头权限）</li>';
+                    } else {
+                        videoDevices.forEach((device, index) => {
+                            const li = document.createElement('li');
+                            li.textContent = `摄像头 ${index + 1}: ${device.label || '未命名设备'} (ID: ${device.deviceId})`;
+                            cameraDevicesUl.appendChild(li);
+                        });
+                    }
+
+                    cameraListDiv.style.display = 'block';
+                } catch (e) {
+                    console.error('枚举设备失败:', e);
+                }
+            }
+        }
+
+        async function startCamera() {
+            try {
+                // 先尝试获取所有摄像头
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const videoDevices = devices.filter(device => device.kind === 'videoinput');
+
+                console.log('检测到的摄像头设备:', videoDevices);
+
+                let constraints = {
+                    video: {
+                        width: { ideal: 640 },
+                        height: { ideal: 480 },
+                        facingMode: 'user'
+                    }
+                };
+
+                // 如果找到了摄像头，尝试使用第一个
+                if (videoDevices.length > 0) {
+                    constraints.video.deviceId = { exact: videoDevices[0].deviceId };
+                }
+
+                stream = await navigator.mediaDevices.getUserMedia(constraints);
+                const videoElement = document.getElementById('videoElement');
+                videoElement.srcObject = stream;
+
+                document.getElementById('startCamera').disabled = true;
+                document.getElementById('stopCamera').disabled = false;
+
+                // 获取实际的视频尺寸
+                const track = stream.getVideoTracks()[0];
+                const settings = track.getSettings();
+                updateStatus(`摄像头启动成功！分辨率: ${settings.width}x${settings.height}`, 'success');
+
+                console.log('摄像头设置:', settings);
+            } catch (error) {
+                console.error('启动摄像头失败:', error);
+                updateStatus(`启动摄像头失败: ${error.message}`, 'error');
+
+                // 提供更详细的错误信息
+                if (error.name === 'NotAllowedError') {
+                    updateStatus('启动摄像头失败: 浏览器未授权访问摄像头。请在浏览器地址栏点击摄像头图标，允许访问。', 'error');
+                } else if (error.name === 'NotFoundError') {
+                    updateStatus('启动摄像头失败: 未找到摄像头设备。请检查摄像头是否连接。', 'error');
+                } else if (error.name === 'NotReadableError') {
+                    updateStatus('启动摄像头失败: 摄像头可能被其他程序占用。', 'error');
+                }
+            }
+        }
+
+        function stopCamera() {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
+                document.getElementById('videoElement').srcObject = null;
+                document.getElementById('startCamera').disabled = false;
+                document.getElementById('stopCamera').disabled = true;
+                updateStatus('摄像头已停止', 'info');
+            }
+        }
+
+        // 页面加载时检查浏览器支持
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            updateStatus('您的浏览器不支持摄像头访问，请使用 Chrome、Edge 或 Firefox 等现代浏览器', 'error');
+            document.getElementById('startCamera').disabled = true;
+            document.getElementById('listCameras').disabled = true;
+        }
+    </script>
+</body>
+</html>

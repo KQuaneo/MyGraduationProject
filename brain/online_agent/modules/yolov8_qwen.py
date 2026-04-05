@@ -199,11 +199,79 @@ class VisionSystem:
             img_to_upload = latest_frame.copy()
 
         is_analyzing = True
+        
+        # Try cloud API first, fallback to local VLM
+        try:
+            # First try cloud API
+            result = self._analyze_with_cloud(img_to_upload, prompt)
+            if result and result not in ["看不清，云端出错了。", "眼睛出问题了。"]:
+                return result
+        except Exception as e:
+            print(f"☁️ Cloud API failed, falling back to local VLM: {e}")
+        
+        # Fallback to local NanoLLaVA
+        try:
+            result = self._analyze_with_local_vlm(img_to_upload, prompt)
+            return result
+        except Exception as e:
+            print(f"🔧 Local VLM also failed: {e}")
+            return "视觉系统暂时不可用。"
+        finally:
+            is_analyzing = False
+
+    def _analyze_with_cloud(self, img, prompt):
+        """Cloud VLM analysis using Qwen-VL"""
         analysis_result = "Thinking (Cloud AI)..."
         print(f"☁️ [Vision] 正在请求通义千问... (Prompt: {prompt})")
 
+        # 路径处理: 存到 temp 文件夹
+        current_file_dir = os.path.dirname(os.path.abspath(__file__))
+        root_path = os.path.dirname(current_file_dir)
+        temp_dir = os.path.join(root_path, "temp")
+        
+        if not os.path.exists(temp_dir):
+            os.makedirs(temp_dir)
+
+        temp_file_path = os.path.join(temp_dir, "vision_cache.jpg")
+        
+        # 保存图片
+        cv2.imwrite(temp_file_path, img)
+        img_path_for_api = f"file://{temp_file_path}"
+
+        # 调用 DashScope API
+        response = dashscope.MultiModalConversation.call(
+            model=CLOUD_MODEL,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"image": img_path_for_api},
+                    {"text": prompt} 
+                ]
+            }]
+        )
+
+        if response.status_code == HTTPStatus.OK:
+            text = response.output.choices[0].message.content[0]['text']
+            print(f"✅ [Vision] 云端识别结果: {text}")
+            
+            # 更新画面上的文字显示
+            display_text = text[:15] + "..." if len(text) > 15 else text
+            analysis_result = display_text
+            
+            return text
+        else:
+            print(f"☁️ Cloud Error: {response.code} - {response.message}")
+            return None
+
+    def _analyze_with_local_vlm(self, img, prompt):
+        """Local VLM analysis using NanoLLaVA"""
+        analysis_result = "Thinking (Local AI)..."
+        print(f"🔧 [Vision] 正在使用本地 NanoLLaVA... (Prompt: {prompt})")
+        
         try:
-            # 路径处理: 存到 temp 文件夹
+            import ollama
+            
+            # Save image for local processing
             current_file_dir = os.path.dirname(os.path.abspath(__file__))
             root_path = os.path.dirname(current_file_dir)
             temp_dir = os.path.join(root_path, "temp")
@@ -211,39 +279,90 @@ class VisionSystem:
             if not os.path.exists(temp_dir):
                 os.makedirs(temp_dir)
 
-            temp_file_path = os.path.join(temp_dir, "vision_cache.jpg")
+            temp_file_path = os.path.join(temp_dir, "local_vision.jpg")
             
-            # 保存图片
-            cv2.imwrite(temp_file_path, img_to_upload)
-            img_path_for_api = f"file://{temp_file_path}"
-
-            # 调用 DashScope API
-            response = dashscope.MultiModalConversation.call(
-                model=CLOUD_MODEL,
+            # Resize for faster local processing
+            small_img = cv2.resize(img, (256, 256))
+            cv2.imwrite(temp_file_path, small_img)
+            
+            # Translate Chinese prompt to English for better local model performance
+            english_prompt = self._translate_prompt_to_english(prompt)
+            
+            response = ollama.chat(
+                model="qnguyen3/nanollava",
                 messages=[{
-                    "role": "user",
-                    "content": [
-                        {"image": img_path_for_api},
-                        {"text": prompt} 
-                    ]
-                }]
+                    'role': 'user',
+                    'content': english_prompt,
+                    'images': [temp_file_path]
+                }],
+                options={
+                    "num_ctx": 512,
+                    "num_predict": 100,
+                    "temperature": 0.1,
+                    "num_thread": 4
+                }
             )
-
-            if response.status_code == HTTPStatus.OK:
-                text = response.output.choices[0].message.content[0]['text']
-                print(f"✅ [Vision] 识别结果: {text}")
-                
-                # 更新画面上的文字显示
-                display_text = text[:15] + "..." if len(text) > 15 else text
-                analysis_result = display_text
-                
-                return text
-            else:
-                print(f"Error: {response.code} - {response.message}")
-                return "看不清，云端出错了。"
-
+            
+            text = response['message']['content'].strip()
+            
+            # Simple translation back to Chinese for common responses
+            chinese_text = self._translate_to_chinese(text)
+            
+            print(f"✅ [Vision] 本地识别结果: {chinese_text}")
+            analysis_result = chinese_text[:15] + "..." if len(chinese_text) > 15 else chinese_text
+            
+            return chinese_text
+            
         except Exception as e:
-            print(f"❌ [Vision] Error: {e}")
-            return "眼睛出问题了。"
-        finally:
-            is_analyzing = False
+            print(f"🔧 Local VLM Error: {e}")
+            return "本地视觉分析失败。"
+
+    def _translate_prompt_to_english(self, chinese_prompt):
+        """Simple prompt translation for better local model performance"""
+        translations = {
+            "请用中文描述你看到的画面。": "Describe what you see in the image.",
+            "请用中文简短描述一下你看到的画面，重点关注最显眼的物体。": "Briefly describe the most prominent objects in the image.",
+            "请根据画面回答用户的问题": "Answer the user's question based on the image:",
+        }
+        
+        for cn, en in translations.items():
+            if cn in chinese_prompt:
+                return en + chinese_prompt.replace(cn, "")
+        
+        return chinese_prompt  # Return original if no translation found
+
+    def _translate_to_chinese(self, english_text):
+        """Simple translation of common English responses to Chinese"""
+        # This is a basic implementation - you could use a proper translation API here
+        translations = {
+            "person": "人",
+            "people": "人",
+            "man": "男人", 
+            "woman": "女人",
+            "child": "小孩",
+            "table": "桌子",
+            "chair": "椅子",
+            "computer": "电脑",
+            "phone": "手机",
+            "book": "书",
+            "cup": "杯子",
+            "bottle": "瓶子",
+            "car": "汽车",
+            "tree": "树",
+            "building": "建筑",
+            "room": "房间",
+            "kitchen": "厨房",
+            "bedroom": "卧室",
+            "living room": "客厅",
+        }
+        
+        result = english_text
+        for en, cn in translations.items():
+            result = result.replace(en, cn)
+            result = result.replace(en.capitalize(), cn)
+        
+        # If no specific translation, just indicate it's a local analysis
+        if result == english_text:
+            return f"检测到: {english_text}"
+        
+        return result

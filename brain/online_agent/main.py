@@ -171,20 +171,18 @@ def audio_logic_thread(eye_display):
             if EYE_DISPLAY_ENABLED and eye_display and not eye_display.running:
                 break
 
-            # --- [A] 闲时视觉检测逻辑 (距离感知) ---
+            # --- [A] 闲时视觉检测逻辑 (距离感知 + 主动观察) ---
             # 只有在 "没在对话" 且 "视觉系统正常" 时运行
             if not is_interacting and vision_system and vision_system.running:
 
-                # 1. 获取视觉中心点 (和你测试代码里的一样)
-                # 使用 getattr 防止 vision_system 还没初始化好报错
+                # 1. 获取视觉中心点
                 center_x = getattr(vision_system, 'closest_person_center_x', None)
                 
-                # 2. 传给底盘 (和你测试代码里的一样)
+                # 2. 传给底盘进行追踪
                 if chassis_controller:
                     chassis_controller.update_vision_data(center_x)
 
-
-                # 读取 vision_module 计算好的人体面积占比 (0.0 ~ 1.0)
+                # 3. 读取人体面积占比 (0.0 ~ 1.0)
                 area = vision_system.closest_person_area
                 
                 target_emotion = "neutral"
@@ -204,10 +202,59 @@ def audio_logic_thread(eye_display):
                 if target_emotion != last_vision_emotion:
                     # 1. 更新屏幕
                     if eye_display: eye_display.update_emotion(target_emotion)
-                    # 2. [新增] 更新耳朵动作
+                    # 2. 更新耳朵动作
                     if ear_controller: ear_controller.update_emotion(target_emotion)
                     
                     last_vision_emotion = target_emotion
+                
+                # === [新增] 主动视觉观察逻辑 ===
+                # 随机间隔进行主动观察（避免过于频繁）
+                current_time = time.time()
+                if (hasattr(vision_system, '_last_proactive_check') and 
+                    current_time - vision_system._last_proactive_check > 30) or \
+                   (not hasattr(vision_system, '_last_proactive_check')):
+                    
+                    # 只有当有人在场时才进行主动观察
+                    if area > 0.02:  # 轻微检测到人就触发
+                        vision_system._last_proactive_check = current_time
+                        
+                        # 随机决定是否进行主动观察 (30% 概率)
+                        import random
+                        if random.random() < 0.3:
+                            print("👀 Proactive visual check triggered...")
+                            
+                            # 短暂暂停音频以避免冲突
+                            try:
+                                stream.stop_stream()
+                                
+                                # 更新状态为观察中
+                                if eye_display: eye_display.update_emotion("thinking")
+                                if ear_controller: ear_controller.update_emotion("thinking")
+                                
+                                # 执行快速视觉分析
+                                proactive_prompt = "你看到了什么有趣的东西吗？用中文简短回答。"
+                                quick_result = vision_system.analyze_now(prompt=proactive_prompt)
+                                
+                                # 如果分析成功且有意义的结果，主动分享
+                                if (quick_result and 
+                                    not any(error in quick_result for error in ["错误", "问题", "失败", "不可用", "看不清"]) and
+                                    len(quick_result) > 5):
+                                    
+                                    print(f"💭 Proactive observation: {quick_result}")
+                                    if eye_display: eye_display.update_emotion("happy")
+                                    if ear_controller: ear_controller.update_emotion("happy")
+                                    speak(f"我看到了{quick_result}")
+                                
+                                # 恢复音频
+                                stream.start_stream()
+                                
+                            except Exception as e:
+                                print(f"⚠️ Proactive check failed: {e}")
+                                # 确保音频恢复
+                                try:
+                                    stream.start_stream()
+                                except:
+                                    pass
             # ---------------------------
 
             # --- [B] 读取音频 ---
@@ -291,48 +338,59 @@ def audio_logic_thread(eye_display):
                         # 6. 开口说话 (此时底盘可能正在转动，实现“边动边说”的效果)
                         speak(reply)
 
-                        # 7. 特殊动作：Look (视觉问答)
+                        # 7. 特殊动作：Look (视觉问答) - Enhanced Dual Input
                         if action == "look":
                             if vision_system:
-                                # [新增] 拍照前，为了防止底盘刚做完动作歪着，强制更新一次视觉追踪
-                                # 或者你可以简单地让它回正: chassis_controller._set_physical_servo(0)
+                                # Enhanced coordination: Ensure robot is facing the person before analysis
                                 if chassis_controller:
-                                    # 尝试获取最新的人脸位置，确保对着人拍
+                                    # Get latest person position and align
                                     center_x = getattr(vision_system, 'closest_person_center_x', 0)
                                     if center_x is not None:
                                         chassis_controller.update_vision_data(center_x)
+                                        print(f"🎯 Aligning to person at position: {center_x:.2f}")
                                     else:
-                                        # 没人就回正
+                                        # No person detected, center the camera
                                         chassis_controller.update_vision_data(0)
+                                        print("🎯 No person detected, centering camera")
                                     
-                                    # 给一点时间让舵机转过去 (0.5秒)
-                                    time.sleep(0.5)
+                                    # Allow time for precise alignment
+                                    time.sleep(0.8)
 
-                                # 更新UI状态
+                                # Update UI to show visual analysis state
                                 if eye_display: eye_display.update_emotion("thinking")
                                 if ear_controller: ear_controller.update_emotion("thinking")
                                 
-                                print(f"📷 正在调用云端视觉...")
+                                print(f"📷 Initiating visual analysis...")
 
-                                # === 视觉提示词逻辑 ===
-                                if len(text) < 4 or text in ["看看", "看一眼", "前面是什么", "描述一下"]:
+                                # === Enhanced Visual Prompt Logic ===
+                                if len(text) < 4 or text in ["看看", "看一眼", "前面是什么", "描述一下", "有什么"]:
                                     dynamic_prompt = "请用中文简短描述一下你看到的画面，重点关注最显眼的物体。"
-                                    print("👀 模式：通用描述")
+                                    print("👀 Mode: General description")
+                                elif "是什么" in text or "什么" in text:
+                                    dynamic_prompt = f"请根据画面回答：{text}？请用中文简短回答。"
+                                    print(f"👀 Mode: Object identification (Question: {text})")
+                                elif "多少" in text or "几个" in text:
+                                    dynamic_prompt = f"请数一数画面中有多少个相关的物体，并回答：{text}？请用中文简短回答。"
+                                    print(f"👀 Mode: Counting (Question: {text})")
                                 else:
                                     dynamic_prompt = f"请根据画面回答用户的问题：{text}？请用中文简短回答。"
-                                    print(f"👀 模式：精准问答 (问题: {text})")
+                                    print(f"👀 Mode: Specific Q&A (Question: {text})")
 
-                                # 调用视觉模块
+                                # Call enhanced visual analysis with fallback
                                 vision_desc = vision_system.analyze_now(prompt=dynamic_prompt)
-                                print(f"👀 视觉反馈: {vision_desc}")
+                                print(f"👀 Visual analysis result: {vision_desc}")
                                 
-                                # 结果反馈
-                                if eye_display: eye_display.update_emotion("happy")
-                                if ear_controller: ear_controller.update_emotion("happy")
-                                
-                                speak(vision_desc)
+                                # Provide feedback based on analysis result
+                                if vision_desc and not any(error in vision_desc for error in ["错误", "问题", "失败", "不可用"]):
+                                    if eye_display: eye_display.update_emotion("happy")
+                                    if ear_controller: ear_controller.update_emotion("happy")
+                                    speak(vision_desc)
+                                else:
+                                    if eye_display: eye_display.update_emotion("sad")
+                                    if ear_controller: ear_controller.update_emotion("sad")
+                                    speak("抱歉，我暂时看不清眼前的东西。")
                             else:
-                                speak("我的眼睛好像还没睁开。")
+                                speak("我的视觉系统还没有启动。")
                         
                     # 8. 交互结束，恢复听觉，释放闲时检测锁
                     # === 🛡️ 安全恢复听觉 (防止舵机电流干扰麦克风) ===
