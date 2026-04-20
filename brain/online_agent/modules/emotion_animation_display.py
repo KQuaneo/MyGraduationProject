@@ -12,11 +12,17 @@ SCREEN_HEIGHT = 600
 
 # 配色：赛博/二次元风格
 BG_COLOR = (20, 20, 28)           # 深邃背景
+BG_GRADIENT_TOP = (10, 14, 26)
+BG_GRADIENT_BOTTOM = (28, 34, 58)
+ACCENT_GLOW = (90, 200, 255)
+ACCENT_GLOW_SOFT = (90, 120, 255)
 SCLERA_COLOR = (245, 248, 255)    # 稍微带冷色调的眼白
 SCLERA_SHADOW = (180, 180, 200)   # 眼白投影
 # 虹膜配色方案 (宝石蓝)
 IRIS_TOP = (20, 40, 90)           # 虹膜顶部（深邃）
 IRIS_BOTTOM = (60, 160, 240)      # 虹膜底部（透光）
+IRIS_MID = (70, 115, 235)
+IRIS_SPARK = (130, 220, 255)
 IRIS_RIM = (10, 20, 50)           # 虹膜外圈轮廓
 PUPIL_COLOR = (10, 10, 20)        # 瞳孔
 HIGHLIGHT_MAIN = (255, 255, 255)  # 主高光
@@ -94,6 +100,7 @@ class EyeDisplay:
         # --- 渲染特效变量 ---
         self.breath_phase = 0
         self.highlight_alpha = 255
+        self.ambient_phase = 0
         
     def _init_props(self):
         # 参数经过微调，使运动更Q弹
@@ -216,6 +223,7 @@ class EyeDisplay:
         now = time.time()
         # 呼吸正弦波 (0.0 ~ 1.0)
         self.breath_phase = (math.sin(now * 2.5) + 1) * 0.5
+        self.ambient_phase = now
         
         # 眨眼逻辑 (两阶段：快速闭合 -> 弹性张开)
         if not self.is_blinking and now > self.next_blink:
@@ -260,6 +268,80 @@ class EyeDisplay:
         colour_rect = pygame.transform.smoothscale(colour_rect, (rect.width, rect.height))
         surf.blit(colour_rect, rect)
 
+    def _draw_soft_circle(self, surf, color, center, radius, alpha):
+        glow = pygame.Surface((radius * 2, radius * 2), pygame.SRCALPHA)
+        for i in range(4, 0, -1):
+            ring_radius = max(1, int(radius * i / 4))
+            ring_alpha = max(0, int(alpha * (i / 4) ** 2))
+            pygame.draw.circle(glow, (*color, ring_alpha), (radius, radius), ring_radius)
+        surf.blit(glow, (center[0] - radius, center[1] - radius), special_flags=pygame.BLEND_ALPHA_SDL2)
+
+    def _bezier_points(self, p0, p1, p2, steps=20):
+        points = []
+        for i in range(steps + 1):
+            t = i / steps
+            bx = (1 - t) ** 2 * p0[0] + 2 * (1 - t) * t * p1[0] + t ** 2 * p2[0]
+            by = (1 - t) ** 2 * p0[1] + 2 * (1 - t) * t * p1[1] + t ** 2 * p2[1]
+            points.append((bx, by))
+        return points
+
+    def _draw_background(self):
+        screen_rect = self.screen.get_rect()
+        self._draw_gradient_rect(self.screen, BG_GRADIENT_TOP, BG_GRADIENT_BOTTOM, screen_rect)
+
+        cx, cy = screen_rect.center
+        pulse = 0.92 + 0.08 * math.sin(self.ambient_phase * 0.8)
+        self._draw_soft_circle(self.screen, ACCENT_GLOW_SOFT, (cx, cy - 20), 320, int(36 * pulse))
+        self._draw_soft_circle(self.screen, ACCENT_GLOW, (cx - 220, cy + 140), 170, 18)
+        self._draw_soft_circle(self.screen, ACCENT_GLOW, (cx + 220, cy + 140), 170, 18)
+
+        for y in range(0, screen_rect.height, 6):
+            alpha = 10 if (y // 6) % 2 == 0 else 6
+            pygame.draw.line(self.screen, (255, 255, 255, alpha), (0, y), (screen_rect.width, y))
+
+        frame_rect = screen_rect.inflate(-48, -44)
+        pygame.draw.rect(self.screen, (120, 160, 210), frame_rect, width=2, border_radius=24)
+        pygame.draw.rect(self.screen, (36, 44, 72), frame_rect.inflate(-14, -14), width=1, border_radius=18)
+
+    def _draw_iris_layers(self, surf, iris_pos, iris_radius, pupil_r, gaze_x, gaze_y):
+        iris_surf = pygame.Surface((iris_radius * 2, iris_radius * 2), pygame.SRCALPHA)
+        center = iris_radius
+
+        for i in range(iris_radius, 0, -1):
+            mix = i / iris_radius
+            color = (
+                int(IRIS_BOTTOM[0] * (1 - mix) + IRIS_TOP[0] * mix),
+                int(IRIS_BOTTOM[1] * (1 - mix) + IRIS_TOP[1] * mix),
+                int(IRIS_BOTTOM[2] * (1 - mix) + IRIS_TOP[2] * mix),
+            )
+            pygame.draw.circle(iris_surf, color, (center, center), i)
+
+        pygame.draw.circle(iris_surf, IRIS_MID, (center, center), int(iris_radius * 0.72), width=max(1, iris_radius // 8))
+        pygame.draw.circle(iris_surf, IRIS_RIM, (center, center), iris_radius, width=max(2, iris_radius // 11))
+
+        band_offset_y = int(iris_radius * 0.28)
+        pygame.draw.ellipse(
+            iris_surf,
+            (*IRIS_SPARK, 135),
+            pygame.Rect(int(iris_radius * 0.18), center + band_offset_y - iris_radius // 5, int(iris_radius * 1.64), iris_radius // 2),
+        )
+
+        shimmer_x = int(center - gaze_x * 0.12)
+        shimmer_y = int(center - gaze_y * 0.12)
+        for angle in range(0, 360, 24):
+            rad = math.radians(angle)
+            inner = int(iris_radius * 0.36)
+            outer = int(iris_radius * 0.82)
+            start = (int(shimmer_x + math.cos(rad) * inner), int(shimmer_y + math.sin(rad) * inner))
+            end = (int(shimmer_x + math.cos(rad) * outer), int(shimmer_y + math.sin(rad) * outer))
+            pygame.draw.line(iris_surf, (*HIGHLIGHT_SEC, 34), start, end, max(1, iris_radius // 18))
+
+        self._draw_soft_circle(iris_surf, ACCENT_GLOW, (center, center), int(iris_radius * 0.95), 42)
+        surf.blit(iris_surf, (iris_pos[0] - iris_radius, iris_pos[1] - iris_radius), special_flags=pygame.BLEND_ALPHA_SDL2)
+
+        pupil_glow_r = max(pupil_r + 4, int(iris_radius * 0.36))
+        self._draw_soft_circle(surf, ACCENT_GLOW_SOFT, iris_pos, pupil_glow_r, 28)
+
     def _draw_eye(self, cx, cy, is_left):
         p = self.props
         # 呼吸缩放效果
@@ -274,11 +356,13 @@ class EyeDisplay:
         surf = pygame.Surface((canvas_size * scale_factor, canvas_size * scale_factor), pygame.SRCALPHA)
         center_x = surf.get_width() // 2
         center_y = surf.get_height() // 2
+        self._draw_soft_circle(surf, ACCENT_GLOW, (center_x, center_y), int(max(w, h) * 0.9 * scale_factor), 44)
         
         # 1. 眼白 (Sclera)
         sclera_rect = pygame.Rect(0, 0, w * scale_factor, h * scale_factor)
         sclera_rect.center = (center_x, center_y)
         pygame.draw.ellipse(surf, SCLERA_COLOR, sclera_rect)
+        pygame.draw.ellipse(surf, SCLERA_SHADOW, sclera_rect, max(4, int(4 * scale_factor)))
         
         # 2. 虹膜 (Iris) - 宝石质感核心
         px = p["pupil_x"].val * scale_factor
@@ -293,26 +377,12 @@ class EyeDisplay:
             
         iris_pos = (int(center_x + (px if is_left else -px)), int(center_y + py))
         iris_radius = int(p["pupil_sz"].val * 2.2 * scale_factor)
-        
-        # 2.1 虹膜外轮廓
-        pygame.draw.circle(surf, IRIS_RIM, iris_pos, iris_radius)
-        
-        # 2.2 虹膜内部渐变 (模拟上深下浅)
-        iris_inner_r = int(iris_radius * 0.92)
-        # 技巧：用一系列从上到下颜色变浅的圆叠加，或者直接画一个mask
-        iris_surf = pygame.Surface((iris_inner_r*2, iris_inner_r*2), pygame.SRCALPHA)
-        # 绘制深色背景
-        pygame.draw.circle(iris_surf, IRIS_TOP, (iris_inner_r, iris_inner_r), iris_inner_r)
-        # 绘制底部的亮色U型 (Subsurface Scattering)
-        u_rect = pygame.Rect(0, iris_inner_r, iris_inner_r*2, iris_inner_r)
-        pygame.draw.ellipse(iris_surf, IRIS_BOTTOM, u_rect)
-        # 模糊混合一下 (可选，这里用简单的层叠模拟)
-        
-        surf.blit(iris_surf, (iris_pos[0]-iris_inner_r, iris_pos[1]-iris_inner_r), special_flags=pygame.BLEND_ALPHA_SDL2)
+        self._draw_iris_layers(surf, iris_pos, iris_radius, int(p["pupil_sz"].val * scale_factor), px, py)
         
         # 3. 瞳孔 (Pupil)
         pupil_r = int(p["pupil_sz"].val * scale_factor)
         pygame.draw.circle(surf, PUPIL_COLOR, iris_pos, pupil_r)
+        pygame.draw.circle(surf, (30, 34, 60), iris_pos, max(2, pupil_r // 3))
         
         # 4. 高光 (Highlights) - 关键的灵魂
         # 主高光 (左上)
@@ -326,6 +396,7 @@ class EyeDisplay:
         hl2_size = int(pupil_r * 0.25)
         hl2_pos = (iris_pos[0] - hl_offset_x * 0.8, iris_pos[1] - hl_offset_y * 0.8)
         pygame.draw.circle(surf, HIGHLIGHT_SEC, hl2_pos, hl2_size)
+        pygame.draw.circle(surf, (*HIGHLIGHT_SEC, 140), (iris_pos[0], iris_pos[1] + int(pupil_r * 0.7)), max(2, hl2_size // 2))
         
         # 5. 眼白内部阴影 (顶部投影，增加立体感)
         shadow_h = int(h * 0.25 * scale_factor)
@@ -361,13 +432,8 @@ class EyeDisplay:
         ctrl_pt_top = (sclera_rect.centerx, current_y_mid + curve_depth)
 
         # 生成上眼睑曲线点
-        curve_points_top = []
         steps = 20
-        for i in range(steps + 1):
-            t = i / steps
-            bx = (1-t)**2 * left_pt[0] + 2*(1-t)*t * ctrl_pt_top[0] + t**2 * right_pt[0]
-            by = (1-t)**2 * left_pt[1] + 2*(1-t)*t * ctrl_pt_top[1] + t**2 * right_pt[1]
-            curve_points_top.append((bx, by))
+        curve_points_top = self._bezier_points(left_pt, ctrl_pt_top, right_pt, steps)
             
         # 绘制上眼睑遮罩
         mask_poly_top = [(0,0), (surf.get_width(), 0)] + list(reversed(curve_points_top)) + [(0,0)]
@@ -377,6 +443,24 @@ class EyeDisplay:
         if closure < 0.9:
             # 睁眼时画曲线
             pygame.draw.lines(surf, OUTLINE_COLOR, False, curve_points_top, int(14 * scale_factor))
+            lash_tip_y = current_y_mid - curve_depth - 14 * scale_factor
+            lash_length = int(26 * scale_factor)
+            outer_anchor = curve_points_top[2 if is_left else -3]
+            inner_anchor = curve_points_top[-3 if is_left else 2]
+            pygame.draw.line(
+                surf,
+                OUTLINE_COLOR,
+                outer_anchor,
+                (outer_anchor[0] + (-lash_length if is_left else lash_length), lash_tip_y),
+                int(5 * scale_factor),
+            )
+            pygame.draw.line(
+                surf,
+                OUTLINE_COLOR,
+                inner_anchor,
+                (inner_anchor[0] + (-lash_length * 0.45 if is_left else lash_length * 0.45), lash_tip_y + 10 * scale_factor),
+                int(4 * scale_factor),
+            )
         else:
             # 闭眼时画一条横线（看起来像睡觉）
             pygame.draw.line(surf, OUTLINE_COLOR, left_pt, right_pt, int(12 * scale_factor))
@@ -399,12 +483,7 @@ class EyeDisplay:
             bot_ctrl = (sclera_rect.centerx, bot_base_y - bot_rise * 1.5)
             
             # 计算下眼睑曲线
-            curve_points_bot = []
-            for i in range(steps + 1):
-                t = i / steps
-                bx = (1-t)**2 * bot_left[0] + 2*(1-t)*t * bot_ctrl[0] + t**2 * bot_right[0]
-                by = (1-t)**2 * bot_left[1] + 2*(1-t)*t * bot_ctrl[1] + t**2 * bot_right[1]
-                curve_points_bot.append((bx, by))
+            curve_points_bot = self._bezier_points(bot_left, bot_ctrl, bot_right, steps)
             
             # 绘制下眼睑遮罩 (遮住下方)
             mask_poly_bot = [
@@ -430,6 +509,7 @@ class EyeDisplay:
         brow_L = (brow_cx - 80 * scale_factor, brow_y + (brow_rot if is_left else -brow_rot) * 2)
         brow_R = (brow_cx + 80 * scale_factor, brow_y - (brow_rot if is_left else -brow_rot) * 2)
         pygame.draw.line(surf, OUTLINE_COLOR, brow_L, brow_R, int(10 * scale_factor))
+        pygame.draw.line(surf, ACCENT_GLOW_SOFT, brow_L, brow_R, int(3 * scale_factor))
 
         # --- 后续的缩放和blit保持不变 ---
         surf = pygame.transform.smoothscale(surf, (canvas_size, canvas_size))
@@ -440,12 +520,8 @@ class EyeDisplay:
         self.screen.blit(surf, dest_rect)
 
     def _render_frame(self):
-        self.screen.fill(BG_COLOR)
-        
-        # 绘制简单的晕影背景 (Vignette) 增加氛围
-        # 这里用一种廉价的方式：画几个透明度极低的大圆
+        self._draw_background()
         cx, cy = self.screen.get_width()//2, self.screen.get_height()//2
-        # pygame.draw.circle(self.screen, (30, 30, 45), (cx, cy), 400)
         
         self._draw_eye(cx, cy, True)   # 左
         self._draw_eye(cx, cy, False)  # 右

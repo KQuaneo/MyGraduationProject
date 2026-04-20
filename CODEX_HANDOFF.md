@@ -504,6 +504,113 @@ Current relevant line:
 
 If the hotfix changes but kiosk appears stale, update the version suffix in `frontend/index.html` and relaunch kiosk.
 
+## Frontend Recovery State
+
+### What Changed In This Continuation
+
+The original `Open-LLM-VTuber` frontend was temporarily replaced at the served `index.html` layer with a simplified expression display page.
+
+Important current reality:
+
+- this is **not** the normal Live2D frontend flow
+- the page currently served by `/` is a recovery UI focused on stable face/eye display
+- `#root` is intentionally hidden in `frontend/index.html`
+- the built frontend bundle is still loaded, but visually suppressed
+
+Current live page characteristics:
+
+- dark full-screen background
+- static expression / eye fallback rendered directly in HTML/CSS
+- `frontend-hotfix.js` still loads
+- cache-bust version currently observed live: `backendcam18`
+
+### Why This Was Done
+
+During this continuation, attempts were made to replace the frontend with animated eyes. Several instability paths appeared:
+
+- browser sessions got out of sync with what the server was serving
+- multiple Chromium profiles/processes fought each other
+- temporary black-screen states appeared
+- canvas-based eye rendering looked correct briefly, then could fall back to a black screen
+- WebGL/Live2D init problems under the hidden original frontend produced extra UI noise
+
+The current stable recovery decision was:
+
+- stop trying to keep the animated canvas path active
+- stop trusting the original Live2D page as the visible layer
+- keep a simpler static expression page that the user reported as stable
+
+### Current Files Involved
+
+- `Open-LLM-VTuber/frontend/index.html`
+- `Open-LLM-VTuber/frontend/frontend-hotfix.js`
+- `Open-LLM-VTuber/frontend/eyes-overlay.js`
+
+Important nuance:
+
+- `eyes-overlay.js` still exists on disk from the earlier animated-eye attempt
+- but it is **not currently loaded** by `index.html`
+- the current stable recovery page is therefore static rather than animated
+
+### Current Verified Runtime State
+
+Observed on `2026-04-16`:
+
+- `open-llm-vtuber.service` was running normally
+- local server returned the simplified expression page at `http://127.0.0.1:12393/`
+- server logs showed requests for:
+  - `frontend-hotfix.js?v=backendcam18`
+  - `assets/main-nu7uwxNJ.js?v=backendcam18`
+  - `assets/main-QEkl09-0.css?v=backendcam18`
+- WebSocket connection to `/client-ws` was established successfully
+- the user reported the expression frontend had become stable again
+
+### Browser / Chromium Notes From This Recovery
+
+At one point, multiple Chromium sessions existed simultaneously:
+
+- the old kiosk-launched profile
+- temporary recovery profiles under `/tmp`
+
+That caused confusion where the screen could show different frontend states than the server was actually serving.
+
+Practical lesson:
+
+- if the screen content does not match the HTML returned by `curl http://127.0.0.1:12393/`, suspect stale or competing Chromium sessions first
+
+One clean recovery approach that worked during this continuation was:
+
+1. kill all Chromium processes
+2. relaunch a single Chromium session on `:0`
+3. use only one profile during recovery
+
+### Known Residual Issues
+
+- server logs still showed:
+  - `GET /undefined/undefined.model3.json HTTP/1.1` `404 Not Found`
+- this likely comes from the bundled original frontend still trying to initialize a model underneath the hidden root
+- because the recovery page hides `#root`, this was not treated as the immediate blocker once the user confirmed stable visible expressions
+
+Recommended next cleanup step:
+
+1. remove or neutralize the hidden frontend code path that still requests `undefined.model3.json`
+
+### Guidance For The Next Session
+
+If the user says the expression frontend is stable, prefer preserving that state first.
+
+Recommended order:
+
+1. do **not** re-enable animated eyes immediately
+2. first clean up the hidden `undefined.model3.json` request path
+3. only after that, if the user explicitly wants animation again, reintroduce animation gradually from the stable static page
+
+If the screen becomes black again:
+
+- first verify what `/` is serving with `curl`
+- then verify Chromium process count/profile usage
+- do not assume backend or service restart alone will fix it
+
 ## Audio Hardware Notes
 
 Audio device previously detected and used:
@@ -511,6 +618,91 @@ Audio device previously detected and used:
 - `CD002-AUDIO Analog Stereo`
 
 Direct system playback test via `pw-play` was audible. That means if app speech is silent again, hardware may still be fine and the bug may be in TTS generation or playback plumbing.
+
+## Raspberry Pi To PCA9685 Wiring Notes
+
+Current hardware situation:
+
+- the old PCA9685 board produced visible burn damage during a direct `channel 0` servo sweep test
+- do not reuse the burned PCA9685 board, because it may short and damage the Raspberry Pi
+- user plans to buy a replacement PCA9685 board
+- only the chassis/base servo is currently intended to be connected
+- ear servos are not currently connected
+- `Open-LLM-VTuber/conf.yaml` has `ear_motion.enabled: false`
+- chassis face tracking is configured for PCA9685 `channel=0`
+
+Recommended Raspberry Pi control wiring for the new PCA9685 board:
+
+- Raspberry Pi `3.3V` -> PCA9685 `VCC`
+- Raspberry Pi `GND` -> PCA9685 `GND`
+- Raspberry Pi `SDA` / GPIO2 / physical pin 3 -> PCA9685 `SDA`
+- Raspberry Pi `SCL` / GPIO3 / physical pin 5 -> PCA9685 `SCL`
+
+User-provided current wire color note:
+
+- yellow -> `1`
+- red -> `3`
+- orange -> `4`
+- green -> `5`
+
+This color note was recorded exactly as provided. Before powering the replacement PCA9685, verify whether these numbers mean Raspberry Pi physical pins, PCA9685 header positions, or another connector numbering scheme. Do not assume this mapping is electrically safe until each wire is matched to `VCC`, `GND`, `SDA`, and `SCL`.
+
+Recommended servo power wiring:
+
+- external servo power positive -> PCA9685 `V+`
+- external servo power negative -> PCA9685 `GND`
+- Raspberry Pi `GND`, PCA9685 `GND`, and external servo power negative must share common ground
+- do not power a chassis servo directly from the Raspberry Pi 5V pin
+- do not connect Raspberry Pi `3.3V` or `5V` to PCA9685 `V+`
+
+Servo channel mapping expected by current software:
+
+- chassis/base servo signal -> PCA9685 `channel 0`
+- left ear servo would be `channel 2`, but ear motion is currently disabled
+- right ear servo would be `channel 3`, but ear motion is currently disabled
+
+Safe bring-up order for the replacement PCA9685:
+
+1. with no servos connected, wire only `VCC`, `GND`, `SDA`, and `SCL`
+2. run `i2cdetect -y 1` and confirm address `0x40`
+3. connect external servo power to `V+` and `GND`, with no servo plugged in, and verify there is no heat/smell
+4. connect one chassis servo to `channel 0`, carefully checking the servo plug direction: `GND`, `V+`, `PWM`
+5. run only a small angle sweep test before enabling face tracking
+6. restart `open-llm-vtuber.service` only after the direct hardware test is safe
+
+Important diagnostic note:
+
+- the direct sweep command previously sent PWM to `channel 0` only; PWM alone should not burn a healthy PCA9685 board
+- visible burn damage strongly suggests wiring, polarity, voltage, short circuit, or power-current issue rather than a frontend/software issue
+
+## Current Stable Kiosk State On 2026-04-20
+
+This is the latest state the user considered acceptable enough to commit:
+
+- visible frontend is the custom static eyes/expression UI
+- original Open-LLM-VTuber frontend bundle still runs underneath with `#root` nearly hidden
+- original frontend handles microphone/VAD/WebSocket conversation flow
+- `emotion-fallback.js` observes backend WebSocket messages and updates the visible eyes expression
+- `backend-camera-patch.js` polls `/backend-camera/snapshot.jpg` and attaches images to conversation payloads
+- browser audio is no longer forcibly muted in `frontend-hotfix.js`
+- `frontend/index.html` currently uses cache-bust suffix `voice-image-1`
+- kiosk browser was relaunched with `--use-fake-ui-for-media-stream` to avoid microphone permission blocking
+
+Hardware safety state during this test:
+
+- no PCA9685 board should be connected until the replacement board arrives
+- `Open-LLM-VTuber/conf.yaml` was locally changed to `face_tracking.enabled: false`
+- `Open-LLM-VTuber/conf.yaml` was locally changed to `ear_motion.enabled: false`
+- these config values may be local runtime config rather than committed code; verify before starting any hardware test
+
+Verified behavior:
+
+- wake word and speech path worked
+- backend attached camera image to the conversation
+- AI generated a visual answer about the camera frame
+- TTS generated audio files
+- no PCA9685 / `face_tracking_servo` / `ear_motion` initialization appeared after disabling those config flags
+- audio was fixed after moving the USB audio device to another port
 
 ## Files Worth Reading First
 
