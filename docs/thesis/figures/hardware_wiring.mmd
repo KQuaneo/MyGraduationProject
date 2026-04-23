@@ -1,0 +1,36 @@
+flowchart TB
+    Pi[树莓派主控]
+    Display[显示屏]
+    Cam[摄像头]
+    USB[USB麦克风/USB声卡]
+    Speaker[扬声器]
+    PCA[PCA9685舵机驱动板]
+    ServoPower[外部舵机电源]
+    BaseServo[底盘/头部舵机 Channel 0]
+    LeftEar[左耳舵机 Channel 2]
+    RightEar[右耳舵机 Channel 3]
+
+    Pi -- HDMI/DSI --> Display
+    Pi -- CSI/Camera --> Cam
+    Pi -- USB --> USB
+    USB -- Audio Out --> Speaker
+
+    Pi -- 3.3V to VCC --> PCA
+    Pi -- GND to GND --> PCA
+    Pi -- GPIO2/SDA --> PCA
+    Pi -- GPIO3/SCL --> PCA
+
+    ServoPower -- V+ --> PCA
+    ServoPower -- GND --> PCA
+    Pi -- Common GND --> ServoPower
+
+    PCA -- PWM/GND/V+ --> BaseServo
+    PCA -- PWM/GND/V+ --> LeftEar
+    PCA -- PWM/GND/V+ --> RightEar
+
+    Note1[注意: 舵机动力电源接PCA9685 V+]
+    Note2[注意: 树莓派3.3V只接PCA9685 VCC逻辑侧]
+    Note3[注意: 树莓派/PCA9685/外部电源必须共地]
+    Note1 -.-> ServoPower
+    Note2 -.-> Pi
+    Note3 -.-> PCA

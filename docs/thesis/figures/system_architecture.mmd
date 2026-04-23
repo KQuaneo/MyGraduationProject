@@ -1,0 +1,44 @@
+flowchart LR
+    User[用户] --> Mic[麦克风/USB声卡]
+    User --> CameraView[真实场景/手持物体]
+    CameraView --> Camera[树莓派摄像头]
+
+    subgraph Frontend[Chromium Kiosk 前端]
+        UI[静态眼睛/表情界面]
+        VAD[VAD与麦克风控制]
+        WSClient[WebSocket客户端]
+    end
+
+    subgraph Backend[FastAPI 后端服务]
+        WSHandler[WebSocketHandler]
+        Wake[唤醒词门控]
+        Conv[Conversation Handler]
+        Visual[视觉意图判断]
+        CamSvc[BackendCameraService]
+        TTS[TTS Manager]
+        ServoSvc[Face/Ear Motion Service]
+    end
+
+    subgraph Model[模型与语音能力]
+        ASR[ASR语音识别]
+        VLM[Qwen-VL视觉语言模型]
+        TTSEngine[TTS语音合成]
+    end
+
+    subgraph Hardware[硬件执行与输出]
+        Speaker[扬声器/pw-play]
+        PCA[PCA9685舵机驱动]
+        Servo[底盘/耳朵舵机]
+    end
+
+    Mic --> VAD --> WSClient --> WSHandler
+    WSHandler --> ASR --> Wake --> Conv
+    Conv --> Visual
+    Visual --> CamSvc
+    Camera --> CamSvc
+    CamSvc --> Conv
+    Conv --> VLM --> TTS --> TTSEngine
+    TTSEngine --> TTS
+    TTS --> WSHandler --> WSClient --> UI
+    TTS --> Speaker
+    Conv --> ServoSvc --> PCA --> Servo
