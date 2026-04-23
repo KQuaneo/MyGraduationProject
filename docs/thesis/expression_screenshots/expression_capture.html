@@ -1,0 +1,438 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Open-LLM-Vtuber</title>
+    <style>
+      html, body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #08101d;
+      }
+      body {
+        position: relative;
+      }
+      #root {
+        position: fixed;
+        inset: 0;
+        z-index: 0;
+        opacity: 0.01;
+        pointer-events: none;
+      }
+      #codex-eye-frontend {
+        position: fixed;
+        inset: 0;
+        z-index: 999999;
+        --anime-line: #2b2132;
+        --anime-ink: #17101d;
+        --anime-glow: #8bdfff;
+        --anime-pink: #ffabc9;
+        --skin-blush: rgba(255, 154, 190, 0.24);
+        background:
+          radial-gradient(ellipse at 50% 58%, rgba(255, 217, 229, 0.16), transparent 35%),
+          radial-gradient(circle at 50% 42%, rgba(139, 223, 255, 0.16), transparent 30%),
+          radial-gradient(circle at 18% 74%, var(--skin-blush), transparent 20%),
+          radial-gradient(circle at 82% 74%, var(--skin-blush), transparent 20%),
+          linear-gradient(180deg, #10182d 0%, #1a1c39 48%, #2a223a 100%);
+        overflow: hidden;
+      }
+      #codex-eye-frontend::before {
+        content: "";
+        position: absolute;
+        inset: 24px;
+        border: 1px solid rgba(255, 230, 244, 0.16);
+        border-radius: 34px;
+        box-shadow:
+          inset 0 0 44px rgba(255, 230, 244, 0.07),
+          0 0 38px rgba(139, 223, 255, 0.08);
+        pointer-events: none;
+      }
+      #codex-eye-frontend::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background:
+          radial-gradient(circle at 13% 22%, rgba(255, 255, 255, 0.95) 0 2px, transparent 3px),
+          radial-gradient(circle at 24% 13%, rgba(124, 232, 255, 0.7) 0 1px, transparent 3px),
+          radial-gradient(circle at 73% 18%, rgba(255, 255, 255, 0.9) 0 2px, transparent 3px),
+          radial-gradient(circle at 88% 31%, rgba(255, 143, 184, 0.75) 0 1px, transparent 3px),
+          linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px);
+        background-size: auto, auto, auto, auto, 100% 7px;
+        opacity: 0.85;
+        pointer-events: none;
+      }
+      #codex-eye-fallback {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: min(8vw, 88px);
+        z-index: 1;
+        transition: transform 180ms ease, filter 180ms ease;
+      }
+      #codex-emotion-label {
+        position: absolute;
+        top: 34px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 3;
+        padding: 10px 22px;
+        border: 1px solid rgba(255, 255, 255, 0.22);
+        border-radius: 999px;
+        background: rgba(12, 14, 32, 0.36);
+        font: 800 20px/1.1 "Trebuchet MS", "Verdana", sans-serif;
+        letter-spacing: 0.22em;
+        color: #fff7fc;
+        text-transform: uppercase;
+        text-shadow:
+          0 0 14px rgba(255, 143, 184, 0.72),
+          0 0 26px rgba(124, 232, 255, 0.42);
+        opacity: 0.86;
+      }
+      .codex-eye-shell {
+        position: relative;
+        width: min(27vw, 298px);
+        height: min(20vw, 188px);
+        border-radius: 58% 42% 54% 46% / 70% 68% 46% 48%;
+        background:
+          radial-gradient(ellipse at 45% 38%, rgba(255, 255, 255, 0.98) 0 9%, rgba(255, 250, 255, 0.98) 36%, #f0f6ff 74%, #d8e3f7 100%);
+        border: 5px solid var(--anime-line);
+        box-shadow:
+          0 18px 32px rgba(0, 0, 0, 0.24),
+          0 0 38px rgba(139, 223, 255, 0.16),
+          inset 0 12px 24px rgba(96, 84, 126, 0.15),
+          inset 0 -14px 24px rgba(255, 171, 201, 0.13);
+        overflow: hidden;
+        transition:
+          transform 180ms ease,
+          border-radius 180ms ease,
+          height 180ms ease,
+          width 180ms ease,
+          box-shadow 180ms ease;
+      }
+      .codex-eye-shell:nth-of-type(3) {
+        transform: scaleX(-1);
+      }
+      .codex-eye-shell:nth-of-type(3)::before,
+      .codex-eye-shell:nth-of-type(3)::after {
+        transform: scaleX(-1);
+      }
+      .codex-eye-shell::before {
+        content: "";
+        position: absolute;
+        width: 39%;
+        height: 78%;
+        left: 31%;
+        top: 12%;
+        border-radius: 48% 52% 50% 50%;
+        background:
+          radial-gradient(circle at 31% 22%, #ffffff 0 9%, rgba(255, 255, 255, 0.9) 10% 13%, transparent 14%),
+          radial-gradient(circle at 58% 73%, rgba(255, 255, 255, 0.86) 0 5%, transparent 6%),
+          radial-gradient(circle at 47% 47%, #090716 0 17%, #1c1b53 18% 29%, #326bd7 42%, #67dcff 66%, #fff1fb 100%);
+        box-shadow:
+          0 0 0 4px #15142e,
+          0 0 0 9px rgba(79, 92, 180, 0.28),
+          0 0 30px rgba(93, 207, 255, 0.62),
+          inset 0 -24px 22px rgba(255, 171, 201, 0.38);
+        transition:
+          left 180ms ease,
+          top 180ms ease,
+          width 180ms ease,
+          height 180ms ease,
+          transform 180ms ease;
+      }
+      .codex-eye-shell::after {
+        content: "";
+        position: absolute;
+        width: 88%;
+        height: 52%;
+        left: 6%;
+        top: -21%;
+        border-radius: 0 0 54% 54%;
+        background:
+          radial-gradient(ellipse at 50% 78%, rgba(80, 57, 87, 0.18), transparent 44%),
+          linear-gradient(180deg, rgba(24, 16, 30, 0.96), rgba(24, 16, 30, 0.42) 62%, transparent);
+        box-shadow:
+          -58px 82px 0 -43px var(--anime-ink),
+          -33px 92px 0 -47px var(--anime-ink),
+          46px 80px 0 -43px var(--anime-ink),
+          74px 88px 0 -50px var(--anime-ink),
+          inset 0 -5px 0 rgba(255, 255, 255, 0.12);
+        transition:
+          width 180ms ease,
+          height 180ms ease,
+          left 180ms ease,
+          top 180ms ease,
+          transform 180ms ease;
+      }
+      #codex-eye-fallback:not([data-emotion]) .codex-eye-shell::after,
+      #codex-eye-fallback[data-emotion="neutral"] .codex-eye-shell::after,
+      #codex-eye-fallback[data-emotion="happy"] .codex-eye-shell::after,
+      #codex-eye-fallback[data-emotion="thinking"] .codex-eye-shell::after {
+        box-shadow:
+          inset 0 -5px 0 rgba(255, 255, 255, 0.12);
+      }
+      .codex-brow {
+        position: absolute;
+        width: min(17vw, 190px);
+        height: 9px;
+        top: calc(50% - min(17vw, 190px));
+        background: linear-gradient(90deg, transparent, #43324d 14%, #2b2132 88%, transparent);
+        border-radius: 999px;
+        box-shadow:
+          0 0 10px rgba(255, 171, 201, 0.22),
+          0 8px 0 -7px rgba(255, 255, 255, 0.34);
+        transition: transform 180ms ease, top 180ms ease, width 180ms ease;
+      }
+      .codex-brow.left {
+        transform: translateX(calc(-1 * min(18vw, 205px))) rotate(-8deg);
+      }
+      .codex-brow.right {
+        transform: translateX(min(18vw, 205px)) rotate(8deg);
+      }
+      #codex-eye-fallback.is-blinking .codex-eye-shell {
+        transform: scaleY(0.14);
+        border-radius: 999px;
+        box-shadow:
+          0 0 32px rgba(76, 224, 255, 0.12),
+          inset 0 2px 6px rgba(110, 124, 168, 0.18);
+      }
+      #codex-eye-fallback.is-blinking .codex-eye-shell:nth-of-type(3) {
+        transform: scaleX(-1) scaleY(0.14);
+      }
+      #codex-eye-fallback.is-blinking .codex-eye-shell::before,
+      #codex-eye-fallback.is-blinking .codex-eye-shell::after {
+        opacity: 0;
+      }
+      #codex-eye-fallback[data-emotion="happy"] .codex-eye-shell {
+        height: min(19vw, 178px);
+        transform: translateY(6px) scaleX(1.025);
+        border-radius: 58% 42% 54% 46% / 68% 66% 44% 48%;
+        background:
+          radial-gradient(ellipse at 45% 38%, rgba(255, 255, 255, 1) 0 10%, rgba(255, 253, 255, 0.99) 38%, #f6fbff 74%, #dfecff 100%);
+        box-shadow:
+          0 18px 32px rgba(0, 0, 0, 0.22),
+          0 0 44px rgba(255, 183, 211, 0.2),
+          0 0 30px rgba(139, 223, 255, 0.14),
+          inset 0 12px 24px rgba(96, 84, 126, 0.13),
+          inset 0 -15px 26px rgba(255, 171, 201, 0.18);
+      }
+      #codex-eye-fallback[data-emotion="happy"] .codex-eye-shell::before {
+        width: 41%;
+        height: 78%;
+        left: 30%;
+        top: 12%;
+        opacity: 1;
+        transform: translateY(2px) scaleY(0.98);
+        background:
+          radial-gradient(circle at 28% 19%, #ffffff 0 10%, rgba(255, 255, 255, 0.92) 11% 14%, transparent 15%),
+          radial-gradient(circle at 68% 28%, rgba(255, 255, 255, 0.88) 0 4%, transparent 5%),
+          radial-gradient(circle at 55% 76%, rgba(255, 255, 255, 0.88) 0 6%, transparent 7%),
+          radial-gradient(circle at 47% 47%, #080716 0 18%, #1d1d58 19% 30%, #3672df 43%, #70e3ff 66%, #fff5fb 100%);
+        box-shadow:
+          0 0 0 4px #15142e,
+          0 0 0 9px rgba(79, 92, 180, 0.24),
+          0 0 34px rgba(105, 218, 255, 0.68),
+          inset 0 -24px 22px rgba(255, 171, 201, 0.4);
+      }
+      #codex-eye-fallback[data-emotion="happy"] .codex-eye-shell::after {
+        width: 88%;
+        left: 6%;
+        top: -13%;
+        height: 58%;
+        border-radius: 0 0 60% 60%;
+        background:
+          radial-gradient(ellipse at 50% 88%, rgba(255, 196, 218, 0.14), transparent 44%),
+          linear-gradient(180deg, rgba(24, 16, 30, 0.88), rgba(24, 16, 30, 0.36) 60%, transparent);
+      }
+      #codex-eye-fallback[data-emotion="happy"] .codex-brow.left {
+        transform: translateX(calc(-1 * min(18vw, 205px))) translateY(-12px) rotate(6deg);
+      }
+      #codex-eye-fallback[data-emotion="happy"] .codex-brow.right {
+        transform: translateX(min(18vw, 205px)) translateY(-12px) rotate(-6deg);
+      }
+      #codex-eye-fallback[data-emotion="sad"] .codex-eye-shell {
+        height: min(16.5vw, 150px);
+        transform: translateY(15px) scaleX(0.96) rotate(2deg);
+        border-radius: 58% 42% 54% 46% / 56% 54% 58% 60%;
+        background:
+          radial-gradient(ellipse at 50% 88%, rgba(196, 221, 252, 0.28), transparent 25%),
+          radial-gradient(ellipse at 45% 40%, rgba(252, 252, 255, 0.96) 0 8%, rgba(247, 250, 255, 0.96) 36%, #e7eefb 74%, #d1dced 100%);
+        box-shadow:
+          0 18px 32px rgba(0, 0, 0, 0.24),
+          0 0 26px rgba(139, 223, 255, 0.09),
+          inset 0 11px 22px rgba(80, 76, 112, 0.15),
+          inset 0 -12px 22px rgba(142, 174, 214, 0.11);
+      }
+      #codex-eye-fallback[data-emotion="sad"] .codex-eye-shell::before {
+        width: 36%;
+        height: 72%;
+        top: 32%;
+        left: 32%;
+        transform: translateY(8px);
+        background:
+          radial-gradient(circle at 29% 20%, rgba(255, 255, 255, 0.92) 0 9%, rgba(255, 255, 255, 0.75) 10% 13%, transparent 14%),
+          radial-gradient(ellipse at 52% 84%, rgba(255, 255, 255, 0.84) 0 8%, rgba(206, 238, 255, 0.34) 9% 15%, transparent 16%),
+          radial-gradient(circle at 46% 48%, #0b0a16 0 17%, #202052 18% 29%, #345fba 42%, #65c6e9 65%, #e6f6ff 100%);
+        box-shadow:
+          0 0 0 4px #17142b,
+          0 0 0 8px rgba(71, 85, 150, 0.18),
+          0 0 22px rgba(120, 197, 235, 0.38),
+          inset 0 -22px 24px rgba(180, 219, 242, 0.34);
+      }
+      #codex-eye-fallback[data-emotion="sad"] .codex-eye-shell::after {
+        width: 92%;
+        left: 4%;
+        top: -16%;
+        height: 54%;
+        border-radius: 0 0 58% 58%;
+        background:
+          radial-gradient(ellipse at 50% 88%, rgba(86, 82, 118, 0.13), transparent 43%),
+          linear-gradient(180deg, rgba(24, 16, 30, 0.82), rgba(24, 16, 30, 0.34) 62%, transparent);
+        box-shadow:
+          inset 0 -5px 0 rgba(255, 255, 255, 0.08);
+      }
+      #codex-eye-fallback[data-emotion="sad"] .codex-brow.left {
+        transform: translateX(calc(-1 * min(18vw, 205px))) translateY(8px) rotate(-18deg);
+      }
+      #codex-eye-fallback[data-emotion="sad"] .codex-brow.right {
+        transform: translateX(min(18vw, 205px)) translateY(8px) rotate(18deg);
+      }
+      #codex-eye-fallback[data-emotion="angry"] .codex-eye-shell {
+        width: min(22vw, 236px);
+        height: min(24vw, 232px);
+        transform: translateY(-6px);
+        border-radius: 54% 46% 54% 46% / 68% 68% 54% 54%;
+        background:
+          radial-gradient(ellipse at 45% 38%, rgba(255, 255, 255, 0.98) 0 9%, rgba(255, 250, 255, 0.98) 36%, #fff2f4 72%, #ffd8df 100%);
+        box-shadow:
+          0 20px 36px rgba(0, 0, 0, 0.3),
+          0 0 42px rgba(255, 94, 72, 0.2),
+          inset 0 12px 24px rgba(96, 84, 126, 0.12),
+          inset 0 -18px 26px rgba(255, 117, 72, 0.18);
+      }
+      #codex-eye-fallback[data-emotion="angry"] .codex-eye-shell::before {
+        width: 36%;
+        height: 64%;
+        left: 32%;
+        top: 18%;
+        border-radius: 50% 50% 47% 53% / 58% 60% 42% 44%;
+        background:
+          radial-gradient(circle at 34% 22%, #ffffff 0 9%, rgba(255, 255, 255, 0.88) 10% 13%, transparent 14%),
+          radial-gradient(ellipse at 49% 73%, rgba(255, 250, 170, 0.94) 0 7%, transparent 8%),
+          radial-gradient(ellipse at 50% 53%, #130309 0 15%, transparent 16%),
+          radial-gradient(ellipse at 50% 58%, #fff089 0 14%, #ffb21f 15% 26%, transparent 27%),
+          radial-gradient(ellipse at 42% 42%, #fff089 0 9%, #ff8a18 10% 22%, transparent 23%),
+          radial-gradient(ellipse at 58% 39%, #ffe15e 0 8%, #ff6b1c 9% 20%, transparent 21%),
+          radial-gradient(ellipse at 50% 50%, #8f111d 0 31%, #e63b1a 45%, #ff9217 66%, #ffe36c 100%);
+        box-shadow:
+          0 0 0 4px #25101d,
+          0 0 0 9px rgba(255, 112, 45, 0.2),
+          0 0 34px rgba(255, 98, 42, 0.6),
+          inset 0 -24px 22px rgba(255, 191, 79, 0.34);
+      }
+      #codex-eye-fallback[data-emotion="angry"] .codex-eye-shell::after {
+        width: 88%;
+        left: 6%;
+        top: -24%;
+        height: 34%;
+        border-radius: 0 0 54% 54%;
+        background:
+          radial-gradient(ellipse at 50% 78%, rgba(80, 57, 87, 0.16), transparent 44%),
+          linear-gradient(180deg, rgba(24, 16, 30, 0.88), rgba(24, 16, 30, 0.3) 62%, transparent);
+        box-shadow:
+          inset 0 -5px 0 rgba(255, 255, 255, 0.1);
+      }
+      #codex-eye-fallback[data-emotion="angry"] .codex-brow.left {
+        width: min(18vw, 205px);
+        height: 10px;
+        background: linear-gradient(90deg, transparent, #7b2940 10%, #2b1529 88%, transparent);
+        box-shadow:
+          0 0 16px rgba(255, 83, 119, 0.26),
+          0 8px 0 -7px rgba(255, 180, 199, 0.34);
+        transform: translateX(calc(-1 * min(18vw, 205px))) translateY(-28px) rotate(-2deg);
+      }
+      #codex-eye-fallback[data-emotion="angry"] .codex-brow.right {
+        width: min(18vw, 205px);
+        height: 10px;
+        background: linear-gradient(90deg, transparent, #7b2940 10%, #2b1529 88%, transparent);
+        box-shadow:
+          0 0 16px rgba(255, 83, 119, 0.26),
+          0 8px 0 -7px rgba(255, 180, 199, 0.34);
+        transform: translateX(min(18vw, 205px)) translateY(-28px) rotate(2deg);
+      }
+      #codex-eye-fallback[data-emotion="surprised"] .codex-eye-shell {
+        width: min(22vw, 236px);
+        height: min(24vw, 232px);
+        transform: translateY(-6px);
+        border-radius: 54% 46% 54% 46% / 68% 68% 54% 54%;
+      }
+      #codex-eye-fallback[data-emotion="surprised"] .codex-eye-shell::before {
+        width: 36%;
+        height: 64%;
+        left: 32%;
+        top: 18%;
+      }
+      #codex-eye-fallback[data-emotion="surprised"] .codex-eye-shell::after {
+        top: -24%;
+        height: 34%;
+      }
+      #codex-eye-fallback[data-emotion="surprised"] .codex-brow.left {
+        transform: translateX(calc(-1 * min(18vw, 205px))) translateY(-30px) rotate(-2deg);
+      }
+      #codex-eye-fallback[data-emotion="surprised"] .codex-brow.right {
+        transform: translateX(min(18vw, 205px)) translateY(-30px) rotate(2deg);
+      }
+      #codex-eye-fallback[data-emotion="thinking"] .codex-eye-shell::before,
+      #codex-eye-fallback[data-emotion="thinking"] .codex-eye-shell::after {
+        transform: translate(18px, -12px);
+      }
+      #codex-eye-fallback[data-emotion="thinking"] .codex-brow.left {
+        transform: translateX(calc(-1 * min(18vw, 205px))) translateY(2px) rotate(-16deg);
+      }
+      #codex-eye-fallback[data-emotion="thinking"] .codex-brow.right {
+        transform: translateX(min(18vw, 205px)) translateY(-16px) rotate(9deg);
+      }
+      @media (max-width: 720px) {
+        #codex-eye-fallback {
+          gap: 7vw;
+        }
+        .codex-eye-shell {
+          width: 34vw;
+          height: 27vw;
+        }
+        .codex-brow {
+          display: none;
+        }
+      }
+    </style>
+
+    <script>
+      const params = new URLSearchParams(location.search);
+      const emotion = params.get("emotion") || "neutral";
+      window.addEventListener("DOMContentLoaded", () => {
+        const root = document.getElementById("codex-eye-fallback");
+        const label = document.getElementById("codex-emotion-label");
+        root.dataset.emotion = emotion;
+        label.textContent = emotion.toUpperCase();
+      });
+    </script>
+  </head>
+
+  <body>
+    <div id="root"></div>
+    <div id="codex-eye-frontend">
+      <div id="codex-emotion-label">NEUTRAL</div>
+      <div id="codex-eye-fallback" aria-hidden="true">
+        <div class="codex-brow left"></div>
+        <div class="codex-eye-shell"></div>
+        <div class="codex-eye-shell"></div>
+        <div class="codex-brow right"></div>
+      </div>
+    </div>
+  </body>
+</html>
