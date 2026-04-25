@@ -10,12 +10,14 @@
 
 Latest local commits at handoff:
 
-- Parent repo: `b177ab9` `chore: sync vtuber and chassis updates`
-- `Open-LLM-VTuber`: `81c5009` `fix: tune ear motion and vision triggers`
-- `frontend`: `1a1dcbf` `fix: hide vad misfire notice`
+- Parent repo: this handoff file is being committed in the parent repo after the nested repo commits below; run `git log -1 --oneline` in `/home/raspberrypi/Desktop/MyGraduationProject` for the exact parent hash.
+- `Open-LLM-VTuber`: `5dcf828` `fix: stabilize kiosk agent and tts flow`
+- `frontend`: `34eba72` `fix: stabilize static expression playback`
 
 Recent `Open-LLM-VTuber` commits from this continuation:
 
+- `5dcf828` `fix: stabilize kiosk agent and tts flow`
+- `70eb6b2` `chore: update frontend expression styles`
 - `81c5009` `fix: tune ear motion and vision triggers`
 - `73483cc` `feat: add ear servo emotion hooks`
 - `e57a5b7` `feat: switch chassis tracking to dnn mil`
@@ -27,10 +29,18 @@ Recent `Open-LLM-VTuber` commits from this continuation:
 
 Recent `frontend` commits from this continuation:
 
+- `34eba72` `fix: stabilize static expression playback`
 - `1a1dcbf` `fix: hide vad misfire notice`
 - `3a3d62a` `feat: boost live2d talk motion intensity`
 
 Git cleanliness should be re-checked at the next session rather than assumed.
+
+Git object repair note from 2026-04-25:
+
+- A failed/interrupted commit left 0-byte loose Git objects in the `frontend` and `Open-LLM-VTuber` object stores.
+- `frontend` was repaired by moving HEAD back to `a77b679`, removing/recreating bad objects, then recommitting as `34eba72`.
+- `Open-LLM-VTuber` was repaired by moving HEAD back to `70eb6b2`, moving 12 bad 0-byte objects to `/tmp/git-corrupt-objects-open-llm-vtuber-20260425180054`, then recommitting as `5dcf828`.
+- Disk was very full during this work (`/dev/mmcblk0p2` around 98% used). If Git writes fail again, free disk space before committing.
 
 Configured remotes/forks:
 
@@ -54,19 +64,182 @@ This project was stabilized on a Raspberry Pi kiosk deployment. Main work focuse
 
 - The app is typically run by a user systemd service:
   - `open-llm-vtuber.service`
+- OpenClaw bridge is now also run by a user systemd service:
+  - `openclaw-robot-bridge.service`
 - Kiosk launcher script:
   - `/home/raspberrypi/Desktop/MyGraduationProject/Open-LLM-VTuber/scripts/open_llm_vtuber_kiosk.sh`
+- Current kiosk launcher uses `/usr/lib/chromium/chromium` directly, not `/usr/bin/chromium`, because the wrapper injected a bad `--js-flags=--no-decommit-pooled-pages` flag.
+- Current kiosk Chromium flags intentionally use `--disable-gpu --enable-unsafe-swiftshader --enable-webgl` for this Pi display setup.
 
 Typical commands that were used:
 
 ```bash
 systemctl --user restart open-llm-vtuber.service
-setsid /home/raspberrypi/Desktop/MyGraduationProject/Open-LLM-VTuber/scripts/open_llm_vtuber_kiosk.sh
+systemctl --user restart openclaw-robot-bridge.service
+systemctl --user restart 'app-open\x2dllm\x2dvtuber\x2dkiosk@autostart.service'
 ```
 
 Server listens on:
 
 - `http://0.0.0.0:12393`
+
+Current observed runtime status on 2026-04-24 after fixes:
+
+- `open-llm-vtuber.service`: active/running
+- `openclaw-robot-bridge.service`: active/running
+- `app-open\x2dllm\x2dvtuber\x2dkiosk@autostart.service`: active/running
+- HDMI mode was corrected to `1024x600` using `xrandr`
+- logs confirmed `PCA9685 shared instance initialized at 50Hz`
+- logs confirmed `Ear motion service started | left_channel=2 right_channel=3`
+- logs confirmed `Face tracking servo service started | channel=0 camera_index=0`
+
+## OpenClaw / External Agent Bridge
+
+OpenClaw is now integrated as an optional external agent layer for Open-LLM-VTuber.
+
+Current relationship:
+
+- Open-LLM-VTuber remains the main conversation, persona, TTS, frontend, and camera orchestration layer.
+- OpenClaw is called as an external tool/intent agent before the main LLM response.
+- The bridge communicates through a simple file protocol:
+  - input: `/tmp/robot_input.txt`
+  - output: `/tmp/robot_output.json`
+- The expected OpenClaw output shape is:
+
+```json
+{
+  "action": "none",
+  "reply": "简短中文回复",
+  "emotion": "curious"
+}
+```
+
+Main files:
+
+- `scripts/openclaw_robot_bridge.py`
+- `docs/openclaw_vtuber_bridge.md`
+- `Open-LLM-VTuber/src/open_llm_vtuber/conversations/openclaw_bridge.py`
+- `Open-LLM-VTuber/src/open_llm_vtuber/conversations/conversation_handler.py`
+- `Open-LLM-VTuber/src/open_llm_vtuber/conversations/single_conversation.py`
+- `Open-LLM-VTuber/src/open_llm_vtuber/config_manager/system.py`
+- `Open-LLM-VTuber/conf.yaml`
+
+Current config block is under `system_config.openclaw_agent` in `Open-LLM-VTuber/conf.yaml`.
+
+Current behavior:
+
+- `enabled: true`
+- `safe_mode: true`
+- OpenClaw is now intentionally limited to live web-query style requests only.
+- The current OpenClaw bridge should be used for weather/news/latest/search/web/online queries.
+- Ordinary chat, vision, persona, camera reasoning, and hardware behavior should stay in the main VTuber agent.
+- The current bridge prompt and normalizer force `action: "none"`; OpenClaw should not request direct robot actions in the current demo.
+- Non-live-query inputs are skipped by `should_query_openclaw()` in `Open-LLM-VTuber/src/open_llm_vtuber/conversations/openclaw_bridge.py`.
+
+The formal user service is installed at:
+
+- `/home/raspberrypi/.config/systemd/user/openclaw-robot-bridge.service`
+
+It has been enabled and attached to the VTuber service:
+
+- `systemctl --user enable openclaw-robot-bridge.service`
+- `systemctl --user add-wants open-llm-vtuber.service openclaw-robot-bridge.service`
+- the unit contains `PartOf=open-llm-vtuber.service`
+
+Useful commands:
+
+```bash
+systemctl --user status openclaw-robot-bridge.service --no-pager
+systemctl --user restart openclaw-robot-bridge.service
+journalctl --user -u openclaw-robot-bridge.service -n 50 --no-pager
+```
+
+OpenClaw binary path:
+
+- `/home/raspberrypi/.npm-global/bin/openclaw`
+
+The OpenClaw default model was changed from an unavailable `zai/glm-5` setup to:
+
+- `longcat/LongCat-Flash-Chat`
+
+That was needed because the local OpenClaw config had a usable LongCat auth profile, while the ZAI profile lacked an API key.
+
+### OpenClaw Memory / Prompt Sync
+
+There are two separate memory systems:
+
+- VTuber side: `BasicMemoryAgent` stores active conversation memory and can restore histories from `Open-LLM-VTuber/chat_history/<conf_uid>/<history_uid>.json`.
+- OpenClaw side: local sessions are stored under `~/.openclaw/agents/main/sessions/`, and workspace memory lives under `~/.openclaw/workspace/memory/`.
+
+Current design decision:
+
+- sync VTuber persona/system prompt context into OpenClaw
+- do **not** sync full VTuber chat history into OpenClaw
+
+Reason:
+
+- VTuber-LLM should remain the final voice/persona/conversation continuity layer.
+- OpenClaw should act as an external tool, realtime information, and action-intent layer.
+- Full chat-history sync would increase privacy leakage, duplicate memory, and context pollution risk.
+
+`scripts/openclaw_robot_bridge.py` now reads `Open-LLM-VTuber/conf.yaml` on startup and injects:
+
+- `character_config.character_name`
+- `character_config.persona_prompt`
+
+The bridge defaults to:
+
+- `--session-mode isolated`
+
+This gives each OpenClaw call a short isolated session id and avoids bloating a fixed `robot-vtuber-bridge.jsonl` session with repeated bridge prompts. Use `--session-mode persistent` only if explicitly experimenting with OpenClaw's own long-term behavior.
+
+### OpenClaw Realtime Tests
+
+End-to-end file protocol tests through the formal service worked.
+
+Weather example:
+
+```json
+{"action": "none", "reply": "广州: 🌩 +18°C (体感+18°C), 风↓19km/h, 湿度94%", "emotion": "curious"}
+```
+
+News example also returned a short `最新新闻：...` style reply through the fallback Google News RSS path.
+
+Important limitation:
+
+- OpenClaw's built-in `web_search` tool reported missing Brave API key.
+- The bridge script therefore includes direct fallback live-query logic for weather (`wttr.in`) and news (Google News RSS).
+- If proper OpenClaw web search is desired later, configure Brave Search for OpenClaw instead of relying only on fallback logic.
+
+## Current Local Runtime Config Notes
+
+`Open-LLM-VTuber/conf.yaml` is intentionally git-ignored and was not committed because it is local runtime configuration and may contain local secrets/API keys.
+
+Observed local values after the 2026-04-24 hardware test:
+
+- `face_tracking.enabled: true`
+- `ear_motion.enabled: true`
+- `ear_motion.left_channel: 2`
+- `ear_motion.right_channel: 3`
+- `ear_motion.max_angle: 20`
+- `openclaw_agent.enabled: true`
+- `voice_wakeup.enabled: true`
+- wake word variants include `小灰小灰`, `小辉小辉`, `小慧小慧`, `小惠小惠`, `小回小回`, and ASR misrecognitions `小许小开`, `小去小开`
+- wake acknowledgement text is `我在`
+- `tts_config.tts_model: piper_tts`
+- `piper_tts.model_path: models/piper/zh_CN-huayan-medium.onnx`
+- `piper_tts.length_scale: 1.18`
+- `piper_tts.noise_scale: 0.55`
+- `piper_tts.noise_w: 0.55`
+- `basic_memory_agent.faster_first_response: false`
+- `letta_agent.faster_first_response: false`
+
+Reason for the TTS values:
+
+- the previous `zh_CN-huayan-x_low` Piper model had a noticeably strange accent
+- `zh_CN-huayan-medium` generated successfully and is more stable
+- slowing speech and reducing noise/style variation reduced words blending together
+- `TTSTaskManager._play_audio_locally()` now waits `0.18s` after each host-local audio playback segment to reduce glued-together phrase boundaries
 
 ## Vision / Camera Pipeline
 
@@ -703,6 +876,67 @@ Verified behavior:
 - TTS generated audio files
 - no PCA9685 / `face_tracking_servo` / `ear_motion` initialization appeared after disabling those config flags
 - audio was fixed after moving the USB audio device to another port
+
+## Static Expression UI Update On 2026-04-23
+
+The visible frontend is still the custom static eyes/expression UI in `Open-LLM-VTuber/frontend/index.html`.
+
+Latest committed expression state:
+
+- `Open-LLM-VTuber` commit: `5dcf828` `fix: stabilize kiosk agent and tts flow`
+- `frontend` commit: `34eba72` `fix: stabilize static expression playback`
+
+Current `frontend/index.html` cache-bust suffix is:
+
+- `live2d-eyes-4`
+
+Latest expression-runtime behavior:
+
+- user input transcription no longer forces a surprised expression
+- audio payloads without real audio no longer immediately reset or change the current expression while speaking
+- each response keeps a stable response emotion instead of defaulting every audio chunk to happy
+- conversation end holds the current expression briefly before neutral fallback, reducing visible eye/expression jitter
+
+Current visible expression states:
+
+- `neutral`: normal open eyes, middle eyelash line removed
+- `happy`: same base style, slightly larger pupils, brighter highlights, softer smiling upper eyelids
+- `sad`: soft half-closed/downcast eyes, no middle eyelash line, pupils lower in the eye frame, outer eyebrow ends raised per user preference
+- `angry`: uses the `surprised` eye-frame shape, with orange/fire-like pupils inside both eyes
+- `surprised`: rounded open-eye expression
+- `thinking`: side-looking pupils, middle eyelash line removed
+
+Expression screenshots were exported for thesis/demo use at:
+
+- `/home/raspberrypi/Desktop/MyGraduationProject/docs/thesis/expression_screenshots/`
+
+Important files in that folder:
+
+- `all_expressions.png`
+- `neutral.png`
+- `happy.png`
+- `sad.png`
+- `angry.png`
+- `surprised.png`
+- `thinking.png`
+- `expression_capture.html`
+- `contact_sheet.html`
+
+Screenshot generation note:
+
+- screenshots were generated from `expression_capture.html`, a temporary standalone page derived from `frontend/index.html`
+- it intentionally removes the production frontend scripts so screenshots do not open WebSocket/camera paths
+- headless Chromium needed elevated execution in this environment because the normal sandbox hit crashpad/shared-memory restrictions
+
+Design caveat:
+
+- do not return to the earlier aggressive black `sad` eyelid/concave shape; the user found that version scary
+- if continuing expression tuning, preserve the current soft anime-eye style and regenerate both the single expression PNG and `all_expressions.png`
+
+Git caveat:
+
+- the expression CSS and screenshots are committed
+- there are still unrelated uncommitted OpenClaw/backend and thesis-file changes in the worktree; do not assume a clean tree
 
 ## Files Worth Reading First
 
