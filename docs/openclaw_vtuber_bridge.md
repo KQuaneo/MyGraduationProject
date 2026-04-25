@@ -1,6 +1,6 @@
 # OpenClaw 与 Open-LLM-VTuber 桥接说明
 
-当前桥接目标是让稳定的 Open-LLM-VTuber kiosk 主链路可以选择性使用 OpenClaw 做外部智能体意图解析，同时不直接执行高风险硬件动作。
+当前桥接目标是让稳定的 Open-LLM-VTuber kiosk 主链路可以选择性使用 OpenClaw 做外部联网查询。OpenClaw 只返回可播报的信息字段，不负责动作、表情、视觉或硬件控制。
 
 ## 已实现的链路
 
@@ -11,17 +11,15 @@
 
 ```json
 {
-  "action": "look",
-  "reply": "让我看看",
-  "emotion": "thinking"
+  "p": "广州今天多云，气温约 18 度，湿度较高。"
 }
 ```
 
 5. Open-LLM-VTuber 后端读取结果后：
    - 通过 WebSocket 发出 `openclaw-agent-result` 状态消息；
-   - 将 `action/reply/emotion` 作为结构化提示注入给主 LLM；
-   - 当 `action` 为 `look` 或 `scan` 时，强制附加后端摄像头快照；
-   - 在 `safe_mode: true` 下不直接执行底盘、耳朵或其他实体动作。
+   - 将 `p` 作为外部联网查询信息注入给主 LLM；
+   - 不因为 OpenClaw 结果附加摄像头快照；
+   - 不通过 OpenClaw 执行底盘、耳朵或其他实体动作。
 
 ## 配置位置
 
@@ -87,7 +85,7 @@ OpenClaw 侧只需要完成文件协议；当前仓库中的 `scripts/openclaw_r
 1. 等待 `/tmp/robot_input.txt` 出现；
 2. 读取用户文本；
 3. 输出 `/tmp/robot_output.json`；
-4. JSON 至少包含 `action`、`reply`、`emotion` 三个字段。
+4. JSON 只需要包含 `p` 字段，内容为简短中文信息，适合直接语音播报。
 
 脚本优先调用：
 
@@ -107,12 +105,12 @@ OpenClaw 侧只需要完成文件协议；当前仓库中的 `scripts/openclaw_r
 1. Open-LLM-VTuber 的 `BasicMemoryAgent` 维护对话记忆。它把当前会话中的用户/AI消息保存在内存中，并可从 `Open-LLM-VTuber/chat_history/<conf_uid>/<history_uid>.json` 恢复历史对话。
 2. OpenClaw 维护自己的本地 Agent session，例如 `~/.openclaw/agents/main/sessions/robot-vtuber-bridge.jsonl`，以及 `~/.openclaw/workspace/memory/` 下的工作区记忆文件。
 
-两套记忆不直接合并。原因是 VTuber 主模型负责最终人设、语音输出和对话连续性；OpenClaw 只负责外部联网、意图解析和动作建议。直接同步完整聊天历史会增加隐私泄漏、上下文污染和重复记忆风险。
+两套记忆不直接合并。原因是 VTuber 主模型负责最终人设、语音输出和对话连续性；OpenClaw 只负责外部联网查询。直接同步完整聊天历史会增加隐私泄漏、上下文污染和重复记忆风险。
 
 当前采用的同步策略是“同步系统提示词，不同步聊天记忆”：
 
 - 桥接脚本启动时读取 VTuber 的角色名和 `persona_prompt`；
-- OpenClaw 按同一人设边界生成 `action/reply/emotion`；
+- OpenClaw 按同一人设边界生成 `p` 信息；
 - OpenClaw 的结果再被注入 VTuber 主模型，由主模型决定最终说法；
 - OpenClaw 不直接替代 VTuber 的角色表达。
 - 桥接脚本默认使用 `--session-mode isolated`，每次 OpenClaw 调用使用隔离短会话，避免固定 session 反复累积桥接 prompt 导致上下文膨胀。若需要研究 OpenClaw 自身长期记忆，可手动改为 `--session-mode persistent`。
@@ -120,27 +118,25 @@ OpenClaw 侧只需要完成文件协议；当前仓库中的 `scripts/openclaw_r
 建议的系统提示词约束：
 
 ```text
-你是二次元萌宠机器人的外部智能体主脑。请把用户意图解析为 JSON。
+你是二次元萌宠机器人的外部联网查询工具。请把查询结果解析为 JSON。
 只输出 JSON，不要输出 Markdown。
 字段：
-- action: none/look/scan/shake/wiggle/turn_left/turn_right/turn_away/look_away
-- reply: 简短中文回复，适合直接朗读
-- emotion: neutral/happy/sad/angry/surprise/fear/thinking/curious
-当前实体动作处于安全模式，运动类 action 只表示意图，不代表已经执行。
+- p: 查询到的信息，简短中文，适合直接朗读，最多 80 个汉字
+不要输出动作、表情或摄像头意图。
 ```
 
 ## 论文口径
 
 可以写：
 
-> 本文在稳定的 Open-LLM-VTuber 主链路外，增加了 OpenClaw 外部智能体桥接接口。该接口通过文件通信获取 OpenClaw 返回的 action、reply、emotion 结构化结果，并将其作为主 LLM 的意图提示和视觉触发依据。当前系统默认开启 safe_mode，不直接执行实体动作，因此 OpenClaw 接入主要用于智能体决策接口验证和后续动作规划扩展。
+> 本文在稳定的 Open-LLM-VTuber 主链路外，增加了 OpenClaw 外部联网查询桥接接口。该接口通过文件通信获取 OpenClaw 返回的 `p` 信息字段，并将其作为主 LLM 的实时信息提示。主 LLM 仍负责最终人设表达、视觉判断、语音输出和硬件调度，因此 OpenClaw 接入主要用于联网信息获取能力验证。
 
 当前实测：
 
 - 天气问题：`广州今天的天气怎么样？`
-- 返回示例：`{"action":"none","reply":"广州: ...","emotion":"curious"}`
+- 返回示例：`{"p":"广州: ..."}`
 - 新闻问题：`讲讲今天的人工智能新闻`
-- 返回示例：`{"action":"none","reply":"最新新闻：...","emotion":"curious"}`
+- 返回示例：`{"p":"最新新闻：..."}`
 
 不要写：
 

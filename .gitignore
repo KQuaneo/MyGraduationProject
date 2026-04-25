@@ -250,8 +250,10 @@ runs/
 *.safetensors
 
 # --- 训练相关 ---
-brain/local_agent/outputs/
-brain/local_agent/unsloth_compiled_cache/
+experiments/local_model/outputs/
+experiments/local_model/unsloth_compiled_cache/
+experiments/local_model/*.gguf
+experiments/local_model/*.safetensors
 wandb/
 
 # --- 虚拟环境 ---
@@ -260,6 +262,18 @@ venv/
 ENV/
 
 # --- 工具构建产物 (如果 llama.cpp 是你编译的) ---
-brain/local_agent/llama.cpp/build/
+experiments/local_model/llama.cpp/
 *.o
 *.so
+
+# --- 本地运行与敏感配置 ---
+.codex
+.lgd-*
+auth-profiles.json
+openclaw_agent
+openclaw_config.json
+logs/
+tmp/
+cache/
+*.bak-*
+*_学术化修改.*

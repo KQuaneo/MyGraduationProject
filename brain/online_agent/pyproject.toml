@@ -1,6 +1,0 @@
-[project]
-name = "my-graduation-project"
-version = "0.1.0"
-description = "My 2D anime-style embodied intelligent toy project"
-# 核心配置在这里：
-requires-python = ">=3.13"

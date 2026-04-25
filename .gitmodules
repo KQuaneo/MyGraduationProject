@@ -1,0 +1,3 @@
+[submodule "Open-LLM-VTuber"]
+	path = Open-LLM-VTuber
+	url = https://github.com/KQuaneo/Open-LLM-VTuber.git

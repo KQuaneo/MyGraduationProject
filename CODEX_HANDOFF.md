@@ -95,12 +95,12 @@ Current observed runtime status on 2026-04-24 after fixes:
 
 ## OpenClaw / External Agent Bridge
 
-OpenClaw is now integrated as an optional external agent layer for Open-LLM-VTuber.
+OpenClaw is now integrated as an optional live web-query layer for Open-LLM-VTuber.
 
 Current relationship:
 
 - Open-LLM-VTuber remains the main conversation, persona, TTS, frontend, and camera orchestration layer.
-- OpenClaw is called as an external tool/intent agent before the main LLM response.
+- OpenClaw is called only for live web-query style requests before the main LLM response.
 - The bridge communicates through a simple file protocol:
   - input: `/tmp/robot_input.txt`
   - output: `/tmp/robot_output.json`
@@ -108,9 +108,7 @@ Current relationship:
 
 ```json
 {
-  "action": "none",
-  "reply": "简短中文回复",
-  "emotion": "curious"
+  "p": "简短中文联网信息"
 }
 ```
 
@@ -133,7 +131,7 @@ Current behavior:
 - OpenClaw is now intentionally limited to live web-query style requests only.
 - The current OpenClaw bridge should be used for weather/news/latest/search/web/online queries.
 - Ordinary chat, vision, persona, camera reasoning, and hardware behavior should stay in the main VTuber agent.
-- The current bridge prompt and normalizer force `action: "none"`; OpenClaw should not request direct robot actions in the current demo.
+- The current bridge prompt and normalizer only emit `p`; OpenClaw should not request robot actions, emotion changes, or camera context in the current demo.
 - Non-live-query inputs are skipped by `should_query_openclaw()` in `Open-LLM-VTuber/src/open_llm_vtuber/conversations/openclaw_bridge.py`.
 
 The formal user service is installed at:
@@ -179,7 +177,7 @@ Current design decision:
 Reason:
 
 - VTuber-LLM should remain the final voice/persona/conversation continuity layer.
-- OpenClaw should act as an external tool, realtime information, and action-intent layer.
+- OpenClaw should act only as an external realtime information layer.
 - Full chat-history sync would increase privacy leakage, duplicate memory, and context pollution risk.
 
 `scripts/openclaw_robot_bridge.py` now reads `Open-LLM-VTuber/conf.yaml` on startup and injects:
@@ -200,10 +198,10 @@ End-to-end file protocol tests through the formal service worked.
 Weather example:
 
 ```json
-{"action": "none", "reply": "广州: 🌩 +18°C (体感+18°C), 风↓19km/h, 湿度94%", "emotion": "curious"}
+{"p": "广州: 🌩 +18°C (体感+18°C), 风↓19km/h, 湿度94%"}
 ```
 
-News example also returned a short `最新新闻：...` style reply through the fallback Google News RSS path.
+News example also returned a short `最新新闻：...` style `p` value through the fallback Google News RSS path.
 
 Important limitation:
 

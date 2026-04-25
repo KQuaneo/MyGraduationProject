@@ -32,9 +32,7 @@ ROBOT_PROMPT = """你是二次元萌宠机器人的外部联网查询工具。
 不要处理视觉、普通聊天、角色扮演、动作控制或硬件控制，这些都由 VTuber 主模型处理。
 你必须只输出一个 JSON 对象，不要输出 Markdown，不要解释。
 JSON 字段：
-- action: none
-- reply: 简短中文回复，适合直接语音播报，最多 50 个汉字
-- emotion: neutral/happy/sad/angry/surprise/fear/thinking/curious
+- p: 查询到的信息，简短中文，适合直接语音播报，最多 80 个汉字
 如果用户问天气、新闻、今天、现在、最新等实时信息，请联网查询后再回答。
 {vtuber_context}
 
@@ -106,7 +104,7 @@ def load_vtuber_context(config_path: str, enabled: bool) -> str:
     name_line = f"当前 VTuber 角色名：{character_name}\n" if character_name else ""
     return (
         "\n当前 VTuber 主模型的人设/系统提示词摘要如下。"
-        "你必须尊重它的语气、边界和安全要求，但不要在 reply 中复述这些规则：\n"
+        "你必须尊重它的语气、边界和安全要求，但不要在 p 中复述这些规则：\n"
         f"{name_line}{persona_prompt}\n"
     )
 
@@ -172,20 +170,14 @@ def run_openclaw(
     if completed.returncode != 0:
         message = (completed.stderr or completed.stdout or "").strip()
         return {
-            "action": "none",
-            "reply": "我联网查询失败了",
-            "emotion": "sad",
+            "p": "我联网查询失败了",
             "debug": message[-300:],
         }
 
     text = extract_openclaw_text(completed.stdout)
-    result = extract_json_object(text) or {
-        "action": infer_action(query),
-        "reply": compact_reply(text),
-        "emotion": infer_emotion(query),
-    }
+    result = extract_json_object(text) or {"p": compact_reply(text)}
     normalized = normalize_result(result)
-    if normalized["reply"] in {"我查到啦", "我查到了，但结果有点空"}:
+    if normalized["p"] in {"我查到啦", "我查到了，但结果有点空"}:
         fallback = fallback_live_query(query)
         if fallback:
             return fallback
@@ -223,16 +215,6 @@ def extract_json_object(text: str) -> Optional[Dict[str, Any]]:
     return None
 
 
-def infer_action(query: str) -> str:
-    return "none"
-
-
-def infer_emotion(query: str) -> str:
-    if any(word in query for word in ("天气", "新闻", "最新", "今天")):
-        return "curious"
-    return "neutral"
-
-
 def compact_reply(text: str) -> str:
     reply = re.sub(r"\s+", " ", text).strip()
     if not reply:
@@ -244,19 +226,11 @@ def fallback_live_query(query: str) -> Optional[Dict[str, str]]:
     if is_weather_query(query):
         weather = fetch_weather(query)
         if weather:
-            return {
-                "action": "none",
-                "reply": weather,
-                "emotion": "curious",
-            }
+            return {"p": weather}
     if is_news_query(query):
         news = fetch_news(query)
         if news:
-            return {
-                "action": "none",
-                "reply": news,
-                "emotion": "curious",
-            }
+            return {"p": news}
     return None
 
 
@@ -339,24 +313,9 @@ def fetch_news(query: str) -> Optional[str]:
 
 
 def normalize_result(result: Dict[str, Any]) -> Dict[str, str]:
-    action = str(result.get("action", "none")).strip().lower() or "none"
-    emotion = str(result.get("emotion", "neutral")).strip().lower() or "neutral"
-    reply = str(result.get("reply", "")).strip() or "我查到啦"
-    allowed_emotions = {
-        "neutral",
-        "happy",
-        "sad",
-        "angry",
-        "surprise",
-        "fear",
-        "thinking",
-        "curious",
-    }
-    return {
-        "action": "none",
-        "reply": reply[:80],
-        "emotion": emotion if emotion in allowed_emotions else "neutral",
-    }
+    # Accept the old reply field during rolling restarts, but only emit p.
+    p = str(result.get("p") or result.get("reply") or "").strip() or "我查到啦"
+    return {"p": p[:80]}
 
 
 def main() -> int:

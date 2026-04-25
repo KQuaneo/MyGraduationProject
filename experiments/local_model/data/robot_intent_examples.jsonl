@@ -1,0 +1,6 @@
+{"instruction":"把红色的方块拿到左边","input":"","output":"{\"action\":\"pick_and_place\",\"target\":\"red_block\",\"destination\":\"left_zone\"}"}
+{"instruction":"前方有障碍物吗？","input":"传感器数据: 前方距离 15cm","output":"{\"warning\":true,\"message\":\"too_close\",\"action\":\"stop\"}"}
+{"instruction":"向右旋转","input":"","output":"{\"action\":\"rotate\",\"direction\":\"right\",\"degree\":90}"}
+{"instruction":"寻找苹果","input":"","output":"{\"action\":\"detect\",\"object\":\"apple\",\"mode\":\"scan\"}"}
+{"instruction":"停止所有动作","input":"","output":"{\"action\":\"stop\",\"reason\":\"user_request\"}"}
+{"instruction":"看一下桌面上有没有杯子","input":"","output":"{\"action\":\"detect\",\"object\":\"cup\",\"mode\":\"scan\"}"}
