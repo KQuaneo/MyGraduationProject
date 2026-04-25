@@ -24,6 +24,13 @@ This directory contains project-facing documentation, deployment notes, runtime 
 - `thesis/系统性能指标记录表4-3.*`: 性能指标记录表。
 - `thesis/系统性能指标记录表4-3.*`: recorded performance table source.
 
+## Visual Assets / 视觉材料
+
+- `demo_images/`: 项目演示截图。
+- `demo_images/`: project demo screenshots.
+- `technical_route/`: 早期技术路线和概念图。
+- `technical_route/`: early technical-route and concept images.
+
 旧草稿、生成脚本和本地备份已移除，使仓库更适合作品集展示。
 
 Old drafts, generation scripts and local backups were removed to keep the repository portfolio-ready.
