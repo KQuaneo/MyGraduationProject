@@ -8,6 +8,8 @@ This directory contains project-facing documentation, deployment notes, runtime 
 
 - `runtime/architecture.md`: 生产架构、模块边界和视觉上下文规则。
 - `runtime/architecture.md`: production architecture, module boundaries and visual-context rules.
+- `runtime/agent-abstraction.md`: 主 Agent 系统提示词、视觉输入和 OpenClaw 联网输入的抽象说明。
+- `runtime/agent-abstraction.md`: main Agent system prompt plus visual-input and OpenClaw web-input abstraction.
 - `deployment/raspberry-pi.md`: 树莓派服务部署、重启和运行路径。
 - `deployment/raspberry-pi.md`: Raspberry Pi service deployment, restart flow and runtime paths.
 - `openclaw_vtuber_bridge.md`: OpenClaw 文件桥接与 `p`-only 协议。
