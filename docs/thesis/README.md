@@ -8,6 +8,8 @@ This directory contains the final thesis and supporting figures/tables for the g
 
 - `final-thesis.docx`: 最终编辑版论文。
 - `final-thesis.docx`: final edited thesis document.
+- `public-thesis-materials.md`: 可公开展示的论文支撑材料，包括需求、架构、分层映射、测试用例和脱敏证据。
+- `public-thesis-materials.md`: public thesis-supporting material, including requirements, architecture, layer mapping, test cases and sanitized evidence.
 - `figures/`: 论文使用的 Mermaid 图源文件。
 - `figures/`: Mermaid source diagrams used in the thesis.
 - `expression_screenshots/`: 表情状态截图。
