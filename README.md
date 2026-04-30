@@ -37,22 +37,22 @@ User voice/text
   -> visual-trigger detector
   -> optional backend camera snapshot
   -> optional OpenClaw live-query bridge
-  -> Qwen-VL / main VTuber Agent
+  -> Qwen-VL / main dialogue module
   -> TTS + local audio playback
   -> expression UI + ear/servo services
 ```
 
-中文说明：OpenClaw 不再作为机器人主脑，它只是联网信息侧车。普通对话、人设表达、视觉判断、表情状态和硬件控制都留在 Open-LLM-VTuber 主后端中，避免外部查询工具污染主流程或直接驱动硬件。
+中文说明：OpenClaw 不再作为主对话生成模块，它只是联网信息侧车。普通对话、人设表达、视觉判断、表情状态和硬件控制都留在 Open-LLM-VTuber 主后端中，避免外部查询工具污染主流程或直接驱动硬件。
 
 English: OpenClaw is no longer the main robot brain. It is a live-information sidecar only. Ordinary conversation, persona, visual reasoning, expression state and hardware behavior stay in the Open-LLM-VTuber backend to avoid context pollution and unsafe external hardware control.
 
-### Agent Abstraction / Agent 抽象
+### Dialogue Module Abstraction / 对话模块抽象
 
-中文说明：最终系统将 `BasicMemoryAgent` 作为唯一主 Agent。系统提示词、人设记忆、可选视觉帧和可选 OpenClaw 实时信息会被统一整理成 Agent 输入；摄像头和 OpenClaw 都只是上下文提供器，不直接生成最终回复，也不直接控制表情或硬件。
+中文说明：最终系统的“主脑”更准确地说是主对话生成与编排模块。代码中该模块由 `BasicMemoryAgent` 类实现，但它不是自主规划和控制硬件的泛化 Agent。系统提示词、人设记忆、可选视觉帧和可选 OpenClaw 实时信息会被统一整理成对话模型输入；摄像头和 OpenClaw 都只是上下文提供器，不直接生成最终回复，也不直接控制表情或硬件。
 
-English: The final system uses `BasicMemoryAgent` as the single main Agent. The system prompt, persona memory, optional visual frame and optional OpenClaw realtime information are normalized into the Agent input. The camera and OpenClaw are context providers only; they do not directly produce the final answer or control expressions and hardware.
+English: The system's "brain" is more accurately the main dialogue generation and orchestration module. In code it is implemented by the `BasicMemoryAgent` class, but it is not a generalized autonomous Agent that plans and controls hardware. The system prompt, persona memory, optional visual frame and optional OpenClaw realtime information are normalized into dialogue-model input. The camera and OpenClaw are context providers only; they do not directly produce the final answer or control expressions and hardware.
 
-See [docs/runtime/agent-abstraction.md](docs/runtime/agent-abstraction.md) for the production system prompt and the visual/web context flow.
+See [docs/runtime/agent-abstraction.md](docs/runtime/agent-abstraction.md) for the production system prompt, visual/web context flow and output post-processing pipeline.
 
 ## Repository Layout / 仓库结构
 
@@ -96,7 +96,7 @@ See [docs/deployment/raspberry-pi.md](docs/deployment/raspberry-pi.md) for setup
 ## Documentation / 文档
 
 - [Architecture / 架构](docs/runtime/architecture.md)
-- [Agent abstraction / Agent 抽象](docs/runtime/agent-abstraction.md)
+- [Dialogue module abstraction / 对话模块抽象](docs/runtime/agent-abstraction.md)
 - [Public system prompt / 公开系统提示词](docs/runtime/system-prompt.md)
 - [Public thesis materials / 论文公开支撑材料](docs/thesis/public-thesis-materials.md)
 - [Raspberry Pi deployment / 树莓派部署](docs/deployment/raspberry-pi.md)
