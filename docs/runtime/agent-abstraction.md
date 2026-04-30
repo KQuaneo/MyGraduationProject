@@ -26,9 +26,9 @@ English: The main Agent decides what to say and how to say it. The camera and Op
 
 ## System Prompt / 系统提示词
 
-生产配置位于 `Open-LLM-VTuber/conf.yaml` 的 `character_config.persona_prompt`。该提示词定义了“小灰”的角色、人设、回答长度和视觉使用边界。
+生产配置位于 `Open-LLM-VTuber/conf.yaml` 的 `character_config.persona_prompt`。该提示词定义了“小灰”的角色、人设、回答长度和视觉使用边界。公开版本见 [Public system prompt / 公开系统提示词](system-prompt.md)。
 
-The production prompt is stored in `character_config.persona_prompt` inside `Open-LLM-VTuber/conf.yaml`. It defines Xiaohui's persona, response style, answer length and visual-context boundary.
+The production prompt is stored in `character_config.persona_prompt` inside `Open-LLM-VTuber/conf.yaml`. It defines Xiaohui's persona, response style, answer length and visual-context boundary. The public version is documented in [Public system prompt](system-prompt.md).
 
 ```text
 你是“小灰”，一个二次元萌宠机器人助手，性格机灵、亲近、好奇，有一点点撒娇感。
