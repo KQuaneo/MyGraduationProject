@@ -6,9 +6,9 @@
 
 The production system is centered on the Open-LLM-VTuber backend/frontend fork. Root-level files provide bridge scripts, hardware notes, deployment documentation and optional local-model experiments.
 
-OpenClaw 不再作为机器人主脑。它是一个联网查询侧车，只返回：
+OpenClaw 不再作为主对话生成模块。它是一个联网查询侧车，只返回：
 
-OpenClaw is no longer the robot brain. It is a live web-query sidecar and returns only:
+OpenClaw is no longer the main dialogue generation module. It is a live web-query sidecar and returns only:
 
 ```json
 {"p": "short realtime information"}
@@ -32,12 +32,14 @@ The final runtime path does not accept action, emotion or visual-trigger fields 
 10. The visual-trigger detector decides whether to attach a backend camera snapshot.
 11. 仅天气、新闻、最新信息或联网搜索类输入会调用 OpenClaw。
 12. OpenClaw is called only for live-query inputs such as weather, news, latest information or web search.
-13. 主 VTuber Agent 结合人设、记忆、可选图像和可选 `p` 信息生成最终回答。
-14. The main VTuber Agent builds the final response with persona, memory, optional image and optional `p` information.
-15. TTS 在树莓派本地生成并播放音频。
-16. TTS audio is generated and played locally on the Raspberry Pi.
-17. 前端表情和后端耳朵/舵机钩子跟随主对话状态，而不是跟随 OpenClaw。
-18. Frontend expressions and backend ear/servo hooks follow the main conversation state, not OpenClaw output.
+13. 主对话模块结合人设、记忆、可选图像和可选 `p` 信息生成自然语言回复。
+14. The main dialogue module builds a natural-language response with persona, memory, optional image and optional `p` information.
+15. 后端输出后处理管线将自然语言流派生为 `SentenceOutput(display_text, tts_text, actions)`。
+16. Backend output post-processing derives `SentenceOutput(display_text, tts_text, actions)` from the natural-language stream.
+17. TTS 在树莓派本地生成并播放音频。
+18. TTS audio is generated and played locally on the Raspberry Pi.
+19. 前端表情和后端耳朵/舵机钩子跟随后处理结果和主对话状态，而不是跟随 OpenClaw。
+20. Frontend expressions and backend ear/servo hooks follow post-processed output and main conversation state, not OpenClaw output.
 
 ## Responsibility Split / 职责划分
 
@@ -49,15 +51,15 @@ The final runtime path does not accept action, emotion or visual-trigger fields 
 | PCA9685 services | 面部追踪和耳朵舵机 PWM 输出 | Face tracking and ear-motion PWM output |
 | Local model experiment | 未来离线动作意图解析研究，不进入生产流程 | Future offline action-intent parsing research, not production |
 
-## Agent Boundary / Agent 边界
+## Dialogue Module Boundary / 对话模块边界
 
-当前系统将 `BasicMemoryAgent` 定义为唯一主 Agent。系统提示词、历史记忆、视觉帧和 OpenClaw 联网结果最终都会被整理成主 Agent 的输入上下文；摄像头、OpenClaw 和硬件服务不是平级决策 Agent。
+当前系统的核心是主对话生成与编排模块，代码中由 `BasicMemoryAgent` 类实现。这里的 `BasicMemoryAgent` 是带记忆和后处理管线的 LLM 对话封装器，不是自主规划、调用工具并控制硬件的泛化 Agent。系统提示词、历史记忆、视觉帧和 OpenClaw 联网结果最终都会被整理成该模块的输入上下文；摄像头、OpenClaw 和硬件服务不是平级决策 Agent。
 
-The current system defines `BasicMemoryAgent` as the single main Agent. The system prompt, memory, visual frame and OpenClaw web result are normalized as input context for that main Agent. The camera, OpenClaw and hardware services are not peer decision-making Agents.
+The core module is the main dialogue generation and orchestration module, implemented by the `BasicMemoryAgent` class. Here, `BasicMemoryAgent` is an LLM dialogue wrapper with memory and post-processing, not a generalized autonomous Agent that plans, calls tools and controls hardware. The system prompt, memory, visual frame and OpenClaw web result are normalized as input context for this module. The camera, OpenClaw and hardware services are not peer decision-making Agents.
 
-详细说明见 [Agent abstraction / Agent 抽象](agent-abstraction.md)。
+详细说明见 [Dialogue module abstraction / 对话模块抽象](agent-abstraction.md)。
 
-See [Agent abstraction](agent-abstraction.md) for the full system prompt and the visual/web input flow.
+See [Dialogue module abstraction](agent-abstraction.md) for the full system prompt, visual/web input flow and output post-processing pipeline.
 
 ## Visual Context Rule / 视觉上下文规则
 
