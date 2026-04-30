@@ -46,6 +46,14 @@ User voice/text
 
 English: OpenClaw is no longer the main robot brain. It is a live-information sidecar only. Ordinary conversation, persona, visual reasoning, expression state and hardware behavior stay in the Open-LLM-VTuber backend to avoid context pollution and unsafe external hardware control.
 
+### Agent Abstraction / Agent 抽象
+
+中文说明：最终系统将 `BasicMemoryAgent` 作为唯一主 Agent。系统提示词、人设记忆、可选视觉帧和可选 OpenClaw 实时信息会被统一整理成 Agent 输入；摄像头和 OpenClaw 都只是上下文提供器，不直接生成最终回复，也不直接控制表情或硬件。
+
+English: The final system uses `BasicMemoryAgent` as the single main Agent. The system prompt, persona memory, optional visual frame and optional OpenClaw realtime information are normalized into the Agent input. The camera and OpenClaw are context providers only; they do not directly produce the final answer or control expressions and hardware.
+
+See [docs/runtime/agent-abstraction.md](docs/runtime/agent-abstraction.md) for the production system prompt and the visual/web context flow.
+
 ## Repository Layout / 仓库结构
 
 ```text
@@ -88,6 +96,7 @@ See [docs/deployment/raspberry-pi.md](docs/deployment/raspberry-pi.md) for setup
 ## Documentation / 文档
 
 - [Architecture / 架构](docs/runtime/architecture.md)
+- [Agent abstraction / Agent 抽象](docs/runtime/agent-abstraction.md)
 - [Raspberry Pi deployment / 树莓派部署](docs/deployment/raspberry-pi.md)
 - [OpenClaw bridge / OpenClaw 桥接](docs/openclaw_vtuber_bridge.md)
 - [Local model experiment / 本地小模型实验](experiments/local_model/README.md)
