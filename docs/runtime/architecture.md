@@ -49,6 +49,16 @@ The final runtime path does not accept action, emotion or visual-trigger fields 
 | PCA9685 services | 面部追踪和耳朵舵机 PWM 输出 | Face tracking and ear-motion PWM output |
 | Local model experiment | 未来离线动作意图解析研究，不进入生产流程 | Future offline action-intent parsing research, not production |
 
+## Agent Boundary / Agent 边界
+
+当前系统将 `BasicMemoryAgent` 定义为唯一主 Agent。系统提示词、历史记忆、视觉帧和 OpenClaw 联网结果最终都会被整理成主 Agent 的输入上下文；摄像头、OpenClaw 和硬件服务不是平级决策 Agent。
+
+The current system defines `BasicMemoryAgent` as the single main Agent. The system prompt, memory, visual frame and OpenClaw web result are normalized as input context for that main Agent. The camera, OpenClaw and hardware services are not peer decision-making Agents.
+
+详细说明见 [Agent abstraction / Agent 抽象](agent-abstraction.md)。
+
+See [Agent abstraction](agent-abstraction.md) for the full system prompt and the visual/web input flow.
+
 ## Visual Context Rule / 视觉上下文规则
 
 只有当用户明确询问场景、摄像头、图片、屏幕或当前可见物体时，系统才会附加摄像头图像。天气、普通知识问答或联网搜索不应接收摄像头上下文。
