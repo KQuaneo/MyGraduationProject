@@ -21,6 +21,8 @@ This directory contains project-facing documentation, deployment notes, runtime 
 
 - `thesis/final-thesis.docx`: 最终论文文档。
 - `thesis/final-thesis.docx`: final thesis document.
+- `thesis/public-thesis-materials.md`: 论文公开支撑材料和可引用图表。
+- `thesis/public-thesis-materials.md`: public thesis-supporting material and reference tables.
 - `thesis/figures/`: 论文使用的 Mermaid 图源文件。
 - `thesis/figures/`: Mermaid source diagrams used by the thesis.
 - `thesis/expression_screenshots/`: 表情状态截图。
