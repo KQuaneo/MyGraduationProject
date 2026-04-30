@@ -97,6 +97,7 @@ See [docs/deployment/raspberry-pi.md](docs/deployment/raspberry-pi.md) for setup
 
 - [Architecture / 架构](docs/runtime/architecture.md)
 - [Agent abstraction / Agent 抽象](docs/runtime/agent-abstraction.md)
+- [Public system prompt / 公开系统提示词](docs/runtime/system-prompt.md)
 - [Raspberry Pi deployment / 树莓派部署](docs/deployment/raspberry-pi.md)
 - [OpenClaw bridge / OpenClaw 桥接](docs/openclaw_vtuber_bridge.md)
 - [Local model experiment / 本地小模型实验](experiments/local_model/README.md)
