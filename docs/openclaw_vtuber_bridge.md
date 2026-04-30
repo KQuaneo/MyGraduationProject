@@ -10,8 +10,8 @@ The bridge lets the stable Open-LLM-VTuber kiosk runtime selectively use OpenCla
 2. The user enters the Open-LLM-VTuber conversation flow through voice or text.
 3. 后端在普通 LLM 对话前，可选地把用户文本写入 `/tmp/robot_input.txt`。
 4. Before normal LLM conversation, the backend may write the user text to `/tmp/robot_input.txt`.
-5. OpenClaw 侧 Agent 读取输入并写回 `/tmp/robot_output.json`。
-6. The OpenClaw-side agent reads the input and writes `/tmp/robot_output.json`.
+5. OpenClaw 侧查询进程读取输入并写回 `/tmp/robot_output.json`。
+6. The OpenClaw-side query process reads the input and writes `/tmp/robot_output.json`.
 7. 返回 JSON 只包含 `p` 字段。
 8. The returned JSON contains only the `p` field.
 
@@ -143,8 +143,8 @@ The system has two memory layers:
 
 1. Open-LLM-VTuber 的 `BasicMemoryAgent` 维护主对话记忆，可从 `Open-LLM-VTuber/chat_history/<conf_uid>/<history_uid>.json` 恢复历史对话。
 2. Open-LLM-VTuber `BasicMemoryAgent` maintains main conversation memory and can restore history from `Open-LLM-VTuber/chat_history/<conf_uid>/<history_uid>.json`.
-3. OpenClaw 维护自己的本地 Agent session，例如 `~/.openclaw/agents/main/sessions/robot-vtuber-bridge.jsonl`。
-4. OpenClaw maintains its own local agent session, for example `~/.openclaw/agents/main/sessions/robot-vtuber-bridge.jsonl`.
+3. OpenClaw 维护自己的本地查询会话，例如 `~/.openclaw/agents/main/sessions/robot-vtuber-bridge.jsonl`。
+4. OpenClaw maintains its own local query session, for example `~/.openclaw/agents/main/sessions/robot-vtuber-bridge.jsonl`.
 
 两套记忆不直接合并。主 VTuber 模型负责最终人设、语音输出和对话连续性；OpenClaw 只负责外部联网查询。直接同步完整聊天历史会增加隐私泄漏、上下文污染和重复记忆风险。
 
