@@ -8,8 +8,8 @@ This directory contains project-facing documentation, deployment notes, runtime 
 
 - `runtime/architecture.md`: 生产架构、模块边界和视觉上下文规则。
 - `runtime/architecture.md`: production architecture, module boundaries and visual-context rules.
-- `runtime/agent-abstraction.md`: 主 Agent 系统提示词、视觉输入和 OpenClaw 联网输入的抽象说明。
-- `runtime/agent-abstraction.md`: main Agent system prompt plus visual-input and OpenClaw web-input abstraction.
+- `runtime/agent-abstraction.md`: 主对话模块、系统提示词、视觉输入、OpenClaw 联网输入和输出后处理流程说明。
+- `runtime/agent-abstraction.md`: main dialogue module, system prompt, visual input, OpenClaw web input and output post-processing flow.
 - `runtime/system-prompt.md`: 可公开展示的“小灰”系统提示词。
 - `runtime/system-prompt.md`: public Xiaohui persona system prompt.
 - `deployment/raspberry-pi.md`: 树莓派服务部署、重启和运行路径。
