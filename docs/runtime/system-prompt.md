@@ -45,6 +45,6 @@ At runtime, Open-LLM-VTuber passes `character_config.persona_prompt` into `Basic
 
 ## Thesis Wording / 论文口径
 
-中文表述：系统提示词承担了角色人格、回答风格和视觉上下文边界三类约束。主 Agent 在每轮对话中基于该提示词、历史记忆、用户输入以及可选视觉/联网上下文生成最终回答，从而保证机器人在具备多模态能力的同时仍保持一致的人设和安全边界。
+中文表述：系统提示词承担了角色人格、回答风格和视觉上下文边界三类约束。主对话生成模块在每轮对话中基于该提示词、历史记忆、用户输入以及可选视觉/联网上下文生成自然语言回复，再由后处理管线派发到 TTS、前端表情和安全动作服务，从而保证机器人在具备多模态能力的同时仍保持一致的人设和安全边界。
 
-English wording: The system prompt defines three constraints: persona, response style and visual-context boundary. In each dialogue turn, the main Agent generates the final response from this prompt, memory, user input and optional visual/web context, keeping the embodied robot consistent in persona while preserving safe multimodal boundaries.
+English wording: The system prompt defines three constraints: persona, response style and visual-context boundary. In each dialogue turn, the main dialogue module generates a natural-language response from this prompt, memory, user input and optional visual/web context. A backend post-processing pipeline then dispatches it to TTS, frontend expression and safe motion services, keeping the embodied robot consistent in persona while preserving safe multimodal boundaries.
